@@ -180,14 +180,11 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
       prompt: [style?.stylePrompt, panel.imagePrompt].filter(Boolean).join(', '),
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',
       styleLoraUrl: style?.loraUrl,
-      characterLoraUrls: [
-        ...panelChars.map((c) => c.loraUrl),
-        background?.loraUrl ?? null,
-      ].filter((u): u is string => !!u),
-      referenceImageUrls: [
-        ...panelChars.map((c) => c.refImageUrl),
-        background?.refImageUrl ?? null,
-      ].filter((u): u is string => !!u),
+      characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),
+      referenceImageUrls: panelChars.map((c) => c.refImageUrl).filter((u): u is string => !!u),
+      // 背景はキャラとは別枠で渡す。混ぜると「キャラLoRAがあると背景LoRAが黙って落ちる」ため
+      backgroundLoraUrl: background?.loraUrl ?? null,
+      backgroundRefImageUrl: background?.refImageUrl ?? null,
       extraInput: style?.extraInput,
     });
     db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(result.url, panelId);

@@ -111,6 +111,17 @@ export function LoraStudio({
         学習画像は<b>10枚以上</b>、同じ対象を別角度・別表情で用意すると精度が上がります。
       </div>
 
+      <div className="info-box" style={{ background: 'var(--warn-bg)', color: 'var(--warn)' }}>
+        <strong>1コマに適用できる LoRA は1つだけです</strong><br />
+        flux 系モデルは <code>lora_weights</code> を1つしか受け取れないため、
+        優先順位は <b>登場キャラ → 背景 → 画風</b> です。
+        {targetKind === 'background' && (
+          <> つまり背景LoRAが効くのは<b>人物のいない情景コマ</b>が中心になります。
+            人物と背景を同時に効かせたい場合は、画風設定で複数LoRA対応モデルを選び、
+            「モデル固有の追加入力」でそのモデルの入力（例: <code>hf_loras</code>）を指定してください。</>
+        )}
+      </div>
+
       {currentLoraUrl && (
         <div className="card" style={{ background: 'var(--ok-bg)', borderColor: 'var(--ok)' }}>
           <strong>LoRA 設定済み</strong>

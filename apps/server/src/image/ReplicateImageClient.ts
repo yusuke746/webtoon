@@ -1,4 +1,4 @@
-import type { ImageClient, ImageRequest, ImageResult } from './ImageClient.js';
+import { resolveConsistencyInputs, type ImageClient, type ImageRequest, type ImageResult } from './ImageClient.js';
 
 /**
  * Replicate API で画像生成する実装。
@@ -20,10 +20,15 @@ export class ReplicateImageClient implements ImageClient {
       aspect_ratio: req.aspectRatio ?? '3:4',
       ...req.extraInput,
     };
-    const lora = req.characterLoraUrls?.[0] ?? req.styleLoraUrl;
+    // lora_weights / image は1つずつしか渡せないため、優先順位に従って1つに決める
+    const { lora, referenceImage, droppedLoras } = resolveConsistencyInputs(req);
     if (lora && input.lora_weights === undefined) input.lora_weights = lora;
-    if (req.referenceImageUrls?.[0] && input.image === undefined) {
-      input.image = req.referenceImageUrls[0];
+    if (referenceImage && input.image === undefined) input.image = referenceImage;
+    if (droppedLoras.length > 0 && input.lora_weights === lora) {
+      // 黙って捨てると「LoRAを学習したのに効かない」原因が分からなくなるので明示する
+      console.warn(
+        `[image] このモデルは LoRA を1つしか適用できません。適用: ${lora} / 未適用: ${droppedLoras.join(', ')}`,
+      );
     }
 
     const res = await fetch(
@@ -66,6 +71,6 @@ export class ReplicateImageClient implements ImageClient {
     if (typeof url !== 'string') {
       throw new Error(`Replicate の出力形式が想定外です: ${JSON.stringify(output).slice(0, 200)}`);
     }
-    return { url };
+    return { url, appliedLora: lora, appliedReferenceImage: referenceImage };
   }
 }
