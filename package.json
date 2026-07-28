@@ -1,0 +1,20 @@
+{
+  "name": "ai-manga-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "あらすじから漫画を自動生成する連載対応Webアプリ（伏線回収エンジン / AI議論 / アセット再利用 / 高カスタマイズ性）",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/server & npm run dev --workspace apps/web & wait",
+    "dev:server": "npm run dev --workspace apps/server",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace packages/shared && npm run build --workspace apps/server && npm run build --workspace apps/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

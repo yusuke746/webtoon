@@ -1,0 +1,258 @@
+import type { Character, Episode, Foreshadowing, PanelRules, Project, StoryTemplate } from '@manga/shared';
+
+/** Claude へ渡すプロンプトのテンプレート集。すべて JSON 出力を強制する */
+
+const JSON_ONLY = '出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。';
+
+export function structurePrompt(
+  project: Project,
+  episodeCount: number,
+  existingEpisodes: Episode[],
+  foreshadowings: Foreshadowing[],
+): string {
+  const tmpl: StoryTemplate = project.storyTemplate;
+  const existing = existingEpisodes.length
+    ? `\n## 既存の話（変更しないこと。続きから作る）\n${existingEpisodes
+        .map((e) => `- 第${e.number}話「${e.title}」: ${e.summary}`)
+        .join('\n')}`
+    : '';
+  const fs = foreshadowings.length
+    ? `\n## 登録済みの伏線（回収予定を考慮すること）\n${foreshadowings
+        .map(
+          (f) =>
+            `- 「${f.title}」(状態:${f.status}, 導入:${f.setupEpisode ?? '未'}話, 回収予定:${f.plannedPayoffEpisode ?? '未定'}話): ${f.description}`,
+        )
+        .join('\n')}`
+    : '';
+
+  return `あなたはプロの漫画原作者です。以下のあらすじから連載漫画の話数構成を作ってください。
+
+## あらすじ
+${project.synopsis}
+
+## 構成テンプレート
+- 型: ${tmpl.name}
+- 1話あたり約${tmpl.pagesPerEpisode}ページ
+- 追加指示: ${tmpl.instructions || 'なし'}
+${existing}${fs}
+
+## 依頼
+新しく${episodeCount}話分の構成を作成してください。物語に「伏線(setup)」と「回収(payoff)」を意図的に設計し、各シーンにどの伏線が関わるかを明記してください。
+
+## 出力形式（JSON）
+{
+  "episodes": [
+    {
+      "number": 話数(整数),
+      "title": "話タイトル",
+      "summary": "話の要約",
+      "scenes": [
+        {
+          "title": "シーン名",
+          "summary": "シーンの内容",
+          "characters": ["登場キャラ名"],
+          "foreshadowRefs": [{"title": "伏線タイトル", "action": "setup または payoff"}]
+        }
+      ]
+    }
+  ],
+  "foreshadowings": [
+    {
+      "title": "伏線タイトル",
+      "description": "伏線の内容",
+      "setupEpisode": 導入話数,
+      "plannedPayoffEpisode": 回収予定話数,
+      "relatedCharacters": ["関連キャラ名"],
+      "relatedItems": ["関連アイテム名"]
+    }
+  ]
+}
+${JSON_ONLY}`;
+}
+
+export function charactersPrompt(project: Project, episodes: Episode[]): string {
+  return `あなたはプロのキャラクターデザイナーです。以下の作品に登場するキャラクターの設定を作ってください。
+
+## あらすじ
+${project.synopsis}
+
+## 話数構成
+${episodes.map((e) => `- 第${e.number}話「${e.title}」: ${e.summary}\n  シーン: ${e.scenes.map((s) => `${s.title}(${s.characters.join('・')})`).join(' / ')}`).join('\n')}
+
+## 依頼
+構成に登場する全キャラクターについて、画像生成の一貫性維持に使える具体的な外見描写を含む設定を作成してください。
+
+## 出力形式（JSON）
+{
+  "characters": [
+    {
+      "name": "キャラ名",
+      "role": "役割（主人公/ヒロイン/敵役など）",
+      "appearance": "外見の詳細（髪型・髪色・服装・体格・特徴）",
+      "personality": "性格・口調・行動原理"
+    }
+  ]
+}
+${JSON_ONLY}`;
+}
+
+export function panelsPrompt(
+  project: Project,
+  episode: Episode,
+  characters: Character[],
+): string {
+  const rules: PanelRules = project.panelRules;
+  return `あなたはプロの漫画家です。以下の話のコマ割り（ネーム）を作ってください。
+
+## 作品あらすじ
+${project.synopsis}
+
+## 対象の話
+第${episode.number}話「${episode.title}」: ${episode.summary}
+シーン構成:
+${episode.scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.summary}（登場: ${s.characters.join('・')}）`).join('\n')}
+
+## キャラクター設定（セリフの口調・外見描写に反映すること）
+${characters.map((c) => `- ${c.name}（${c.role}）: 外見=${c.appearance} / 性格=${c.personality}`).join('\n')}
+
+## コマ割りルール
+- 1ページ最大${rules.maxPanelsPerPage}コマ
+- レイアウトは ${rules.gridCols}列 × ${rules.gridRows}行 のグリッド座標（x,y,w,h は整数、x+w <= ${rules.gridCols}、y+h <= ${rules.gridRows}）
+- 読み方向: ${rules.readingDirection === 'rtl' ? '右から左（日本式）' : rules.readingDirection === 'ltr' ? '左から右' : '縦スクロール'}
+- 目安ページ数: ${project.storyTemplate.pagesPerEpisode}ページ
+- 追加ルール: ${rules.customRules || 'なし'}
+
+## 依頼
+各コマについて、情景描写・セリフ・画像生成用の英語プロンプトを作成してください。
+英語プロンプトには "manga panel" とカメラワーク・構図・キャラの外見特徴を必ず含めてください。
+
+## 出力形式（JSON）
+{
+  "panels": [
+    {
+      "layout": {"page": ページ番号, "x": 0, "y": 0, "w": 4, "h": 2},
+      "description": "情景・構図の日本語説明",
+      "dialogues": [{"speaker": "話者名", "text": "セリフ", "kind": "speech|thought|narration|sfx"}],
+      "imagePrompt": "english prompt for image generation",
+      "characters": ["このコマに登場するキャラ名"]
+    }
+  ]
+}
+${JSON_ONLY}`;
+}
+
+export const DISCUSSION_ROLES = [
+  {
+    key: 'editor',
+    name: '編集者',
+    system:
+      'あなたはベテランの漫画編集者です。商業的な魅力・引きの強さ・読者を掴む構成の観点から、率直に批評と改善案を述べてください。',
+  },
+  {
+    key: 'plotter',
+    name: 'プロット担当',
+    system:
+      'あなたはプロの漫画原作者（プロット担当）です。物語の整合性・伏線の設計・キャラクターアークの観点から、具体的な構成案を述べてください。',
+  },
+  {
+    key: 'reader',
+    name: '読者代表',
+    system:
+      'あなたは漫画好きの読者代表です。読んでいて面白いか・感情移入できるか・分かりにくい点はないかを、読者目線で率直に述べてください。',
+  },
+] as const;
+
+export function discussionTurnPrompt(
+  topic: string,
+  context: string,
+  history: { roleName: string; content: string }[],
+): string {
+  const h = history.length
+    ? `\n## これまでの議論\n${history.map((m) => `【${m.roleName}】${m.content}`).join('\n\n')}`
+    : '';
+  return `漫画作品の企画会議です。以下の議題について、あなたの役割の立場から意見を述べてください。
+
+## 議題
+${topic}
+
+## 作品コンテキスト
+${context}
+${h}
+
+## 依頼
+300字以内で、具体的な提案を含めて意見を述べてください。他の参加者の意見には賛成/反対を明確にしてください。`;
+}
+
+export function consensusPrompt(
+  topic: string,
+  history: { roleName: string; content: string }[],
+): string {
+  return `あなたは会議のファシリテーターです。以下の議論を総括し、合意形成された案をまとめてください。
+
+## 議題
+${topic}
+
+## 議論ログ
+${history.map((m) => `【${m.roleName}】${m.content}`).join('\n\n')}
+
+## 出力形式（JSON）
+{
+  "summary": "ユーザー向けの決定事項の要約（200字以内）",
+  "proposal": "採用時に実行する具体的な変更内容の箇条書き"
+}
+${JSON_ONLY}`;
+}
+
+export function applyChangePrompt(
+  instruction: string,
+  project: Project,
+  episodes: Episode[],
+  foreshadowings: Foreshadowing[],
+): string {
+  return `あなたは漫画制作アプリのアシスタントです。ユーザーの変更指示を、現在の構成データに反映した新しいデータを出力してください。
+
+## ユーザーの変更指示
+${instruction}
+
+## 現在の構成データ（JSON）
+${JSON.stringify(
+    {
+      episodes: episodes.map((e) => ({
+        number: e.number, title: e.title, summary: e.summary, scenes: e.scenes,
+      })),
+      foreshadowings: foreshadowings.map((f) => ({
+        title: f.title, description: f.description, setupEpisode: f.setupEpisode,
+        plannedPayoffEpisode: f.plannedPayoffEpisode, status: f.status,
+        relatedCharacters: f.relatedCharacters, relatedItems: f.relatedItems,
+      })),
+    },
+    null,
+    2,
+  )}
+
+## 依頼
+変更指示を反映した episodes / foreshadowings の全量を、入力と同じ形式の JSON で出力してください。
+変更が不要な要素もそのまま含めてください（差分ではなく全量）。
+${JSON_ONLY}`;
+}
+
+export function projectContextSummary(
+  project: Project,
+  episodes: Episode[],
+  characters: Character[],
+  foreshadowings: Foreshadowing[],
+): string {
+  return [
+    `タイトル: ${project.title}`,
+    `あらすじ: ${project.synopsis}`,
+    episodes.length
+      ? `話数構成:\n${episodes.map((e) => `第${e.number}話「${e.title}」: ${e.summary}`).join('\n')}`
+      : '話数構成: 未生成',
+    characters.length
+      ? `キャラクター: ${characters.map((c) => `${c.name}(${c.role})`).join('、')}`
+      : 'キャラクター: 未生成',
+    foreshadowings.length
+      ? `伏線:\n${foreshadowings.map((f) => `- ${f.title}(${f.status})`).join('\n')}`
+      : '伏線: なし',
+  ].join('\n\n');
+}
