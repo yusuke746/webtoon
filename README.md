@@ -4,13 +4,13 @@
 
 ## 差別化ポイント（独自拡張）
 
-| # | 機能 | 実装 |
-|---|------|------|
-| 1 | **伏線回収エンジン** | 伏線を「導入話数 / 回収予定話数 / 状態 / 関連キャラ・アイテム」を持つ構造データとして管理。回収予定を過ぎた未回収伏線を自動検出して警告（`apps/server/src/engines/foreshadow.ts`） |
-| 2 | **カスタマイズ自由度** | 画風・コマ割りルール・構成テンプレートを作品ごとに上書き可能。全生成ステップに「手動編集 → 再生成」ループあり |
-| 3 | **AI同士の議論機能** | 編集者 / プロット担当 / 読者代表の3役の Claude が議題を議論し合意案を生成。ログ保存・ユーザー介入・採否選択・構成への自動反映に対応（`apps/server/src/engines/discussion.ts`） |
-| 4 | **データの使い回し** | キャラ・世界観・画風を「ライブラリアセット」として保存し、別作品へキャスティング可能 |
-| 5 | **みやすいUI/UX** | 議論の要約表示と、自然言語の変更指示（「ペンダントの回収を3話に延ばして」）を構成データへ直接反映する `apply-change` |
+| # | 機能                         | 実装                                                                                                                                                                                 |
+| - | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 | **伏線回収エンジン**   | 伏線を「導入話数 / 回収予定話数 / 状態 / 関連キャラ・アイテム」を持つ構造データとして管理。回収予定を過ぎた未回収伏線を自動検出して警告（`apps/server/src/engines/foreshadow.ts`） |
+| 2 | **カスタマイズ自由度** | 画風・コマ割りルール・構成テンプレートを作品ごとに上書き可能。全生成ステップに「手動編集 → 再生成」ループあり                                                                       |
+| 3 | **AI同士の議論機能**   | 編集者 / プロット担当 / 読者代表の3役の Claude が議題を議論し合意案を生成。ログ保存・ユーザー介入・採否選択・構成への自動反映に対応（`apps/server/src/engines/discussion.ts`）     |
+| 4 | **データの使い回し**   | キャラ・世界観・画風を「ライブラリアセット」として保存し、別作品へキャスティング可能                                                                                                 |
+| 5 | **みやすいUI/UX**      | 議論の要約表示と、自然言語の変更指示（「ペンダントの回収を3話に延ばして」）を構成データへ直接反映する`apply-change`                                                                |
 
 ## アーキテクチャ
 
@@ -54,18 +54,18 @@ npm run seed
 
 ### 環境変数
 
-| 変数 | 既定値 | 説明 |
-|------|--------|------|
-| `LLM_CLIENT` | `claude` | `claude`（CLI サブプロセス） / `mock`（開発用） |
-| `CLAUDE_CLI_PATH` | `claude` | Claude CLI のパス |
-| `CLAUDE_CLI_MODEL` | (CLI 既定) | `--model` に渡すモデル名 |
-| `LLM_TIMEOUT_MS` | `300000` | CLI 呼び出しのタイムアウト |
-| `DISCUSSION_ROUNDS` | `2` | AI議論のラウンド数 |
-| `IMAGE_CLIENT` | 自動 | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |
-| `REPLICATE_API_TOKEN` | — | Replicate の API トークン |
-| `REPLICATE_MODEL` | `black-forest-labs/flux-schnell` | 画風未設定時のフォールバックモデル |
-| `PORT` | `3001` | API サーバーのポート |
-| `DATA_DIR` | `./data` | SQLite DB の保存先 |
+| 変数                    | 既定値                             | 説明                                                                      |
+| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------- |
+| `LLM_CLIENT`          | `claude`                         | `claude`（CLI サブプロセス） / `mock`（開発用）                       |
+| `CLAUDE_CLI_PATH`     | `claude`                         | Claude CLI のパス                                                         |
+| `CLAUDE_CLI_MODEL`    | (CLI 既定)                         | `--model` に渡すモデル名                                                |
+| `LLM_TIMEOUT_MS`      | `300000`                         | CLI 呼び出しのタイムアウト                                                |
+| `DISCUSSION_ROUNDS`   | `2`                              | AI議論のラウンド数                                                        |
+| `IMAGE_CLIENT`        | 自動                               | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |
+| `REPLICATE_API_TOKEN` | —                                 | Replicate の API トークン                                                 |
+| `REPLICATE_MODEL`     | `black-forest-labs/flux-schnell` | 画風未設定時のフォールバックモデル                                        |
+| `PORT`                | `3001`                           | API サーバーのポート                                                      |
+| `DATA_DIR`            | `./data`                         | SQLite DB の保存先                                                        |
 
 Claude CLI / Replicate なしで動作確認する場合:
 
@@ -86,19 +86,19 @@ LLM_CLIENT=mock IMAGE_CLIENT=mock npm run dev
 
 ## 主要 API
 
-| メソッド | パス | 説明 |
-|---------|------|------|
-| POST | `/api/projects/:id/generate/structure` | 構成 + 伏線の生成 |
-| POST | `/api/projects/:id/generate/characters` | キャラ生成 |
-| POST | `/api/episodes/:id/generate/panels` | ネーム生成 |
-| POST | `/api/episodes/:id/generate/images` | 一括作画 |
-| GET | `/api/projects/:id/foreshadow-warnings` | 伏線回収漏れ警告 |
-| POST | `/api/projects/:id/discussions` | AI議論の開始 |
-| POST | `/api/discussions/:id/intervene` | 議論への介入 |
-| POST | `/api/discussions/:id/decision` | 採否（採用時は構成へ反映可） |
-| POST | `/api/projects/:id/apply-change` | 自然言語の変更指示を構成へ反映 |
-| POST | `/api/assets/:type/save/:itemId` | アセットをライブラリへ保存 |
-| POST | `/api/projects/:id/cast/:type/:assetId` | ライブラリから作品へキャスティング |
+| メソッド | パス                                      | 説明                               |
+| -------- | ----------------------------------------- | ---------------------------------- |
+| POST     | `/api/projects/:id/generate/structure`  | 構成 + 伏線の生成                  |
+| POST     | `/api/projects/:id/generate/characters` | キャラ生成                         |
+| POST     | `/api/episodes/:id/generate/panels`     | ネーム生成                         |
+| POST     | `/api/episodes/:id/generate/images`     | 一括作画                           |
+| GET      | `/api/projects/:id/foreshadow-warnings` | 伏線回収漏れ警告                   |
+| POST     | `/api/projects/:id/discussions`         | AI議論の開始                       |
+| POST     | `/api/discussions/:id/intervene`        | 議論への介入                       |
+| POST     | `/api/discussions/:id/decision`         | 採否（採用時は構成へ反映可）       |
+| POST     | `/api/projects/:id/apply-change`        | 自然言語の変更指示を構成へ反映     |
+| POST     | `/api/assets/:type/save/:itemId`        | アセットをライブラリへ保存         |
+| POST     | `/api/projects/:id/cast/:type/:assetId` | ライブラリから作品へキャスティング |
 
 ## ロードマップ
 
