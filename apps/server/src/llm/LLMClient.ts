@@ -11,6 +11,7 @@ export type LLMTask =
   | 'discussion'     // AI議論の1発言
   | 'consensus'      // 議論の合意形成・要約
   | 'apply_change'   // 要約ベースの変更指示の適用
+  | 'ref_image'      // 参照画像用の英語プロンプト生成
   | 'summarize';     // 汎用要約
 
 export interface LLMRequest {

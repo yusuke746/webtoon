@@ -4,6 +4,7 @@ import { getLLMClient, extractJson } from '../llm/index.js';
 import { getImageClient } from '../image/index.js';
 import { charactersPrompt, panelsPrompt, structurePrompt } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
+import { listBackgrounds } from './visual.js';
 
 // ---------- 取得ヘルパ ----------
 
@@ -106,7 +107,7 @@ export async function generateCharacters(projectId: number): Promise<Character[]
 interface PanelsOutput {
   panels: {
     layout: PanelLayout; description: string; dialogues: Dialogue[];
-    imagePrompt: string; characters: string[];
+    imagePrompt: string; characters: string[]; background?: string | null;
   }[];
 }
 
@@ -116,27 +117,31 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
   const episode = rowToEpisode(epRow as any);
   const project = getProject(episode.projectId);
   const characters = listCharacters(episode.projectId);
+  const backgrounds = listBackgrounds(episode.projectId);
 
   const text = await getLLMClient().complete({
     task: 'panels',
-    prompt: panelsPrompt(project, episode, characters),
+    prompt: panelsPrompt(project, episode, characters, backgrounds),
   });
   const out = extractJson<PanelsOutput>(text);
 
   // 再生成時は既存パネルを置き換える
   db.prepare('DELETE FROM panels WHERE episode_id = ?').run(episodeId);
   const insert = db.prepare(
-    `INSERT INTO panels (episode_id, idx, layout, description, dialogues, image_prompt, character_ids, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')`,
+    `INSERT INTO panels (episode_id, idx, layout, description, dialogues, image_prompt, character_ids, background_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
   );
   (out.panels ?? []).forEach((p, i) => {
     const charIds = (p.characters ?? [])
       .map((name) => characters.find((c) => c.name === name)?.id)
       .filter((id): id is number => id !== undefined);
+    const backgroundId = p.background
+      ? backgrounds.find((b) => b.name === p.background)?.id ?? null
+      : null;
     insert.run(
       episodeId, i, JSON.stringify(p.layout ?? { page: 1, x: 0, y: 0, w: 4, h: 2 }),
       p.description ?? '', JSON.stringify(p.dialogues ?? []),
-      p.imagePrompt ?? '', JSON.stringify(charIds),
+      p.imagePrompt ?? '', JSON.stringify(charIds), backgroundId,
     );
   });
   db.prepare("UPDATE episodes SET status = 'paneled' WHERE id = ?").run(episodeId);
@@ -164,6 +169,10 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
   const style = styleRow ? rowToArtStyle(styleRow as any) : null;
 
   const panelChars = listCharacters(episode.projectId).filter((c) => panel.characterIds.includes(c.id));
+  // 背景も一貫性アセットとして扱う（同じ場所を毎回同じ構造で描くため）
+  const background = panel.backgroundId
+    ? listBackgrounds(episode.projectId).find((b) => b.id === panel.backgroundId) ?? null
+    : null;
 
   db.prepare("UPDATE panels SET status = 'generating' WHERE id = ?").run(panelId);
   try {
@@ -171,8 +180,14 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
       prompt: [style?.stylePrompt, panel.imagePrompt].filter(Boolean).join(', '),
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',
       styleLoraUrl: style?.loraUrl,
-      characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),
-      referenceImageUrls: panelChars.map((c) => c.refImageUrl).filter((u): u is string => !!u),
+      characterLoraUrls: [
+        ...panelChars.map((c) => c.loraUrl),
+        background?.loraUrl ?? null,
+      ].filter((u): u is string => !!u),
+      referenceImageUrls: [
+        ...panelChars.map((c) => c.refImageUrl),
+        background?.refImageUrl ?? null,
+      ].filter((u): u is string => !!u),
       extraInput: style?.extraInput,
     });
     db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(result.url, panelId);
@@ -183,12 +198,21 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
   return rowToPanel(db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId) as any);
 }
 
-/** エピソード内の全パネルを順次作画（レート制限に配慮して直列実行） */
-export async function generateEpisodeImages(episodeId: number): Promise<Panel[]> {
+/**
+ * エピソード内の全パネルを順次作画（レート制限に配慮して直列実行）。
+ * onProgress を渡すとコマ1件ごとに進捗を通知する（ジョブの進捗表示用）。
+ */
+export async function generateEpisodeImages(
+  episodeId: number,
+  onProgress?: (done: number, total: number, label: string) => void,
+): Promise<Panel[]> {
   const panels = listPanels(episodeId);
-  for (const p of panels) {
-    if (p.status === 'done') continue;
+  const pending = panels.filter((p) => p.status !== 'done');
+  let done = 0;
+  for (const p of pending) {
     await generatePanelImage(p.id);
+    done += 1;
+    onProgress?.(done, pending.length, `P${p.layout.page}-${p.index + 1}`);
   }
   db.prepare("UPDATE episodes SET status = 'rendered' WHERE id = ?").run(episodeId);
   return listPanels(episodeId);

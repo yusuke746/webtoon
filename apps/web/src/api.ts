@@ -1,6 +1,7 @@
 import type {
-  ArtStyle, Character, Discussion, DiscussionMessage, Episode,
-  Foreshadowing, ForeshadowWarning, Panel, Project, Worldview,
+  ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
+  Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
+  Panel, Project, RefImage, RefImageKind, Worldview,
 } from '@manga/shared';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -28,6 +29,10 @@ const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 export type EpisodeWithPanels = Episode & { panels: Panel[] };
 export type DiscussionWithMessages = Discussion & { messages: DiscussionMessage[] };
+/** 議論の開始・介入は非同期実行。進捗追跡用の job が一緒に返る */
+export type DiscussionStart = { discussion: Discussion; job: Job };
+export type LoraStart = { job: Job; training: LoraTraining };
+export type AssetType = 'character' | 'worldview' | 'art_style' | 'background';
 
 export const api = {
   // プロジェクト
@@ -43,7 +48,8 @@ export const api = {
       `/projects/${projectId}/generate/structure`, { episodeCount }),
   generateCharacters: (projectId: number) => post<Character[]>(`/projects/${projectId}/generate/characters`),
   generatePanels: (episodeId: number) => post<Panel[]>(`/episodes/${episodeId}/generate/panels`),
-  generateEpisodeImages: (episodeId: number) => post<Panel[]>(`/episodes/${episodeId}/generate/images`),
+  /** 一括作画は非同期。Job を返すので進捗はポーリングで追う */
+  generateEpisodeImages: (episodeId: number) => post<Job>(`/episodes/${episodeId}/generate/images`),
   generatePanelImage: (panelId: number) => post<Panel>(`/panels/${panelId}/generate-image`),
 
   // エピソード / パネル
@@ -72,9 +78,10 @@ export const api = {
   // AI議論
   listDiscussions: (projectId: number) => get<Discussion[]>(`/projects/${projectId}/discussions`),
   startDiscussion: (projectId: number, topic: string) =>
-    post<Discussion>(`/projects/${projectId}/discussions`, { topic }),
+    post<DiscussionStart>(`/projects/${projectId}/discussions`, { topic }),
   getDiscussion: (id: number) => get<DiscussionWithMessages>(`/discussions/${id}`),
-  intervene: (id: number, comment: string) => post<Discussion>(`/discussions/${id}/intervene`, { comment }),
+  intervene: (id: number, comment: string) =>
+    post<DiscussionStart>(`/discussions/${id}/intervene`, { comment }),
   decide: (id: number, adopted: boolean, applyToStructure: boolean) =>
     post<Discussion>(`/discussions/${id}/decision`, { adopted, applyToStructure }),
 
@@ -93,9 +100,43 @@ export const api = {
     post<Worldview>(`/projects/${projectId}/worldviews`, body),
 
   // アセットライブラリ（拡張4）
-  listAssets: <T>(type: 'character' | 'worldview' | 'art_style') => get<T[]>(`/assets/${type}`),
-  saveAsset: (type: 'character' | 'worldview' | 'art_style', itemId: number) =>
-    post<unknown>(`/assets/${type}/save/${itemId}`),
-  castAsset: (projectId: number, type: 'character' | 'worldview' | 'art_style', assetId: number) =>
+  listAssets: <T>(type: AssetType) => get<T[]>(`/assets/${type}`),
+  saveAsset: (type: AssetType, itemId: number) => post<unknown>(`/assets/${type}/save/${itemId}`),
+  castAsset: (projectId: number, type: AssetType, assetId: number) =>
     post<unknown>(`/projects/${projectId}/cast/${type}/${assetId}`),
+
+  // ジョブ（非同期処理の進捗）
+  getJob: (id: number) => get<Job>(`/jobs/${id}`),
+  listJobs: (projectId: number) => get<Job[]>(`/projects/${projectId}/jobs`),
+  listActiveJobs: (projectId: number) => get<Job[]>(`/projects/${projectId}/jobs/active`),
+
+  // 背景（背景・ロケーションの一貫性）
+  listBackgrounds: (projectId: number) => get<Background[]>(`/projects/${projectId}/backgrounds`),
+  createBackground: (projectId: number, body: Partial<Background>) =>
+    post<Background>(`/projects/${projectId}/backgrounds`, body),
+  updateBackground: (id: number, body: Partial<Background>) => put<Background>(`/backgrounds/${id}`, body),
+  deleteBackground: (id: number) => del<{ ok: true }>(`/backgrounds/${id}`),
+
+  // 参照画像（一貫性アセットの候補画像）
+  listRefImages: (kind: RefImageKind, ownerId: number) =>
+    get<RefImage[]>(`/ref-images/${kind}/${ownerId}`),
+  generateRefImages: (
+    projectId: number, kind: RefImageKind, ownerId: number, count: number, prompt?: string,
+  ) => post<Job>(`/projects/${projectId}/ref-images/${kind}/${ownerId}/generate`, { count, prompt }),
+  selectRefImage: (id: number) => post<RefImage>(`/ref-images/${id}/select`),
+  deleteRefImage: (id: number) => del<{ ok: true }>(`/ref-images/${id}`),
+
+  // LoRA学習
+  listLoraTrainings: (projectId: number) => get<LoraTraining[]>(`/projects/${projectId}/lora-trainings`),
+  validateLora: (projectId: number, body: Record<string, unknown>) =>
+    post<{ problems: string[]; defaults: { trainerModel: string; destination: string } }>(
+      `/projects/${projectId}/lora-trainings/validate`, body),
+  startLoraTraining: (
+    projectId: number,
+    body: {
+      targetKind: LoraTargetKind; targetId: number; imageUrls: string[]; triggerWord: string;
+      steps?: number; loraRank?: number; trainerModel?: string; destination?: string;
+    },
+  ) => post<LoraStart>(`/projects/${projectId}/lora-trainings`, body),
+  cancelLoraTraining: (id: number) => post<LoraTraining>(`/lora-trainings/${id}/cancel`),
 };

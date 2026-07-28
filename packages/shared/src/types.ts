@@ -167,6 +167,8 @@ export interface Panel {
   imageUrl: string | null;
   /** 登場キャラID（参照画像/LoRAの解決に使用） */
   characterIds: number[];
+  /** 背景ID（背景の参照画像/LoRAの解決に使用。未設定なら null） */
+  backgroundId: number | null;
   status: PanelStatus;
 }
 
@@ -194,6 +196,127 @@ export interface DiscussionMessage {
   roleName: string;
   content: string;
   createdAt: string;
+}
+
+// ---------- 背景（背景・ロケーションの一貫性） ----------
+
+/**
+ * 「同じ酒場」「同じ教室」を毎回同じ絵で出すための背景アセット。
+ * キャラと同じく参照画像 / LoRA を持ち、パネルに紐付けて作画時へ渡される。
+ */
+export interface Background {
+  id: number;
+  /** null = プロジェクト非依存のライブラリアセット */
+  projectId: number | null;
+  name: string;
+  /** 場所の説明（日本語）。参照画像の生成プロンプトの元になる */
+  description: string;
+  /** 画像生成時に一貫性維持へ使う参照画像URL */
+  refImageUrl: string | null;
+  /** 背景専用LoRAのURL/識別子 */
+  loraUrl: string | null;
+  sourceAssetId: number | null;
+  createdAt: string;
+}
+
+// ---------- 参照画像（一貫性アセットの候補画像） ----------
+
+export type RefImageKind = 'character' | 'background' | 'style';
+
+/**
+ * Replicate で生成した参照画像の候補。
+ * 同じ対象に対して複数枚生成し、ユーザーが「これを正とする」1枚を選ぶ。
+ */
+export interface RefImage {
+  id: number;
+  projectId: number;
+  kind: RefImageKind;
+  /** character.id / background.id / art_style.id */
+  ownerId: number;
+  url: string;
+  /** 生成に使った英語プロンプト（再現・微調整用） */
+  prompt: string;
+  /** 対象の refImageUrl として採用中か */
+  selected: boolean;
+  createdAt: string;
+}
+
+// ---------- 非同期ジョブ ----------
+
+export type JobKind =
+  | 'structure'
+  | 'characters'
+  | 'panels'
+  | 'episode_images'
+  | 'discussion'
+  | 'apply_change'
+  | 'ref_images'
+  | 'lora_train';
+
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+/**
+ * 数十秒〜数十分かかる処理の進捗をフロントへ返すためのジョブ。
+ * サーバー内メモリではなく DB に持つため、リロードしても進捗が追える。
+ */
+export interface Job {
+  id: number;
+  projectId: number | null;
+  kind: JobKind;
+  status: JobStatus;
+  /** 画面表示用のジョブ名（例: "AI編集会議"） */
+  label: string;
+  /** 現在実行中のステップ名（例: "編集者が発言中…"） */
+  step: string;
+  doneSteps: number;
+  totalSteps: number;
+  /** 完了後に開くべき対象（例: "discussion:12"） */
+  resultRef: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- LoRA学習 ----------
+
+export type LoraTargetKind = 'character' | 'background' | 'art_style';
+
+export type LoraTrainingStatus =
+  | 'preparing'
+  | 'uploading'
+  | 'training'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled';
+
+/**
+ * Replicate の trainings API による LoRA 学習。
+ * 学習画像を ZIP 化 → Replicate files API へアップロード → trainer モデルを実行、
+ * という流れを1レコードで追跡する。完了すると weightsUrl が対象の loraUrl に入る。
+ */
+export interface LoraTraining {
+  id: number;
+  projectId: number;
+  targetKind: LoraTargetKind;
+  targetId: number;
+  /** 表示名（対象の名前をコピー） */
+  name: string;
+  /** 学習に使う Replicate モデル（version 付き） */
+  trainerModel: string;
+  /** 学習結果の出力先モデル（owner/model 形式。事前に Replicate 上で作成が必要） */
+  destination: string;
+  /** プロンプトでこの LoRA を呼び出すためのトリガーワード */
+  triggerWord: string;
+  /** 学習に使った画像URL */
+  imageUrls: string[];
+  /** Replicate 側の training id */
+  replicateId: string | null;
+  status: LoraTrainingStatus;
+  /** 完了後の重みURL */
+  weightsUrl: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ---------- デフォルト値 ----------

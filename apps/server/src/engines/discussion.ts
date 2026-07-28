@@ -1,6 +1,7 @@
-import type { Discussion, DiscussionMessage } from '@manga/shared';
+import type { Discussion, DiscussionMessage, Job } from '@manga/shared';
 import { db, rowToDiscussion, rowToDiscussionMessage } from '../db.js';
 import { getLLMClient, extractJson } from '../llm/index.js';
+import { startJob, type JobContext } from './jobs.js';
 import {
   DISCUSSION_ROLES, consensusPrompt, discussionTurnPrompt, projectContextSummary,
 } from '../prompts.js';
@@ -31,31 +32,68 @@ function addMessage(discussionId: number, round: number, roleName: string, conte
   ).run(discussionId, round, roleName, content);
 }
 
-/** 議論を新規作成し、規定ラウンドを実行して合意案まで進める */
-export async function startDiscussion(projectId: number, topic: string): Promise<Discussion> {
+/**
+ * 議論を新規作成し、ラウンド実行をバックグラウンドのジョブへ流す。
+ *
+ * 3役 × 複数ラウンド + 合意形成で数分かかるため、HTTP は即座に返し、
+ * フロントは discussion をポーリングして «発言が増えていく様子» を表示する。
+ */
+export function startDiscussion(projectId: number, topic: string): { discussion: Discussion; job: Job } {
   const result = db.prepare(
     "INSERT INTO discussions (project_id, topic, status) VALUES (?, ?, 'running')",
   ).run(projectId, topic);
   const discussionId = Number(result.lastInsertRowid);
 
-  await runRounds(discussionId, 1, ROUNDS);
-  await buildConsensus(discussionId);
-  return getDiscussion(discussionId);
+  const job = startJob(
+    {
+      projectId,
+      kind: 'discussion',
+      label: `AI編集会議: ${topic}`,
+      // 3役 × ラウンド数 + 合意形成
+      totalSteps: DISCUSSION_ROLES.length * ROUNDS + 1,
+      step: '議論を開始しています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`discussion:${discussionId}`);
+      await runRounds(discussionId, 1, ROUNDS, ctx);
+      ctx.setStep('合意案をまとめています…');
+      await buildConsensus(discussionId);
+      ctx.advance('合意案がまとまりました');
+    },
+  );
+
+  return { discussion: getDiscussion(discussionId), job };
 }
 
-/** ユーザーの介入コメントを追加し、追加ラウンド + 再合意を実行する */
-export async function intervene(discussionId: number, userComment: string): Promise<Discussion> {
+/** ユーザーの介入コメントを追加し、追加ラウンド + 再合意をバックグラウンドで実行する */
+export function intervene(discussionId: number, userComment: string): { discussion: Discussion; job: Job } {
   const messages = listMessages(discussionId);
   const nextRound = messages.reduce((max, m) => Math.max(max, m.round), 0) + 1;
   addMessage(discussionId, nextRound, 'ユーザー', userComment);
   db.prepare("UPDATE discussions SET status = 'running' WHERE id = ?").run(discussionId);
+  const discussion = getDiscussion(discussionId);
 
-  await runRounds(discussionId, nextRound + 1, 1);
-  await buildConsensus(discussionId);
-  return getDiscussion(discussionId);
+  const job = startJob(
+    {
+      projectId: discussion.projectId,
+      kind: 'discussion',
+      label: '介入をふまえた追加ラウンド',
+      totalSteps: DISCUSSION_ROLES.length + 1,
+      step: 'あなたの意見を反映しています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`discussion:${discussionId}`);
+      await runRounds(discussionId, nextRound + 1, 1, ctx);
+      ctx.setStep('合意案を作り直しています…');
+      await buildConsensus(discussionId);
+      ctx.advance('合意案を更新しました');
+    },
+  );
+
+  return { discussion, job };
 }
 
-async function runRounds(discussionId: number, startRound: number, count: number) {
+async function runRounds(discussionId: number, startRound: number, count: number, ctx?: JobContext) {
   const discussion = getDiscussion(discussionId);
   const project = getProject(discussion.projectId);
   const context = projectContextSummary(
@@ -68,6 +106,7 @@ async function runRounds(discussionId: number, startRound: number, count: number
 
   for (let round = startRound; round < startRound + count; round++) {
     for (const role of DISCUSSION_ROLES) {
+      ctx?.setStep(`ラウンド${round}: ${role.name}が発言中…`);
       const history = listMessages(discussionId).map((m) => ({ roleName: m.roleName, content: m.content }));
       const content = await llm.complete({
         task: 'discussion',
@@ -75,6 +114,7 @@ async function runRounds(discussionId: number, startRound: number, count: number
         prompt: discussionTurnPrompt(discussion.topic, context, history),
       });
       addMessage(discussionId, round, role.name, content.trim());
+      ctx?.advance(`ラウンド${round}: ${role.name}の発言が完了`);
     }
   }
 }

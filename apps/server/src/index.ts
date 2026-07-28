@@ -1,6 +1,11 @@
+// .env の読み込み。他の import より «前» に置くこと（並べ替え禁止）。
+// routes.js -> db.js はトップレベルで process.env を参照するため、順序が入れ替わると設定が効かない。
+import './env.js';
+
 import express from 'express';
 import cors from 'cors';
 import { router } from './routes.js';
+import { failStaleJobs } from './engines/jobs.js';
 
 const app = express();
 app.use(cors());
@@ -12,6 +17,11 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   console.error('[error]', err);
   res.status(500).json({ error: err.message });
 });
+
+// ジョブの実行状態はプロセス内メモリにあるため、再起動をまたいだ running は復帰できない。
+// 「永遠に0%」の表示を残さないよう起動時に失敗扱いにする。
+const stale = failStaleJobs();
+if (stale > 0) console.log(`[jobs] 中断された実行中ジョブを ${stale} 件クリーンアップしました`);
 
 const port = Number(process.env.PORT ?? 3001);
 const server = app.listen(port, () => {

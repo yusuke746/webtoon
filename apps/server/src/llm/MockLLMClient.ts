@@ -78,6 +78,7 @@ export class MockLLMClient implements LLMClient {
               dialogues: [{ speaker: 'ナレーション', text: 'いつもと同じ朝のはずだった。', kind: 'narration' }],
               imagePrompt: 'manga panel, wide establishing shot of a japanese town in the morning, a boy walking to school',
               characters: ['主人公'],
+              background: '通学路',
             },
             {
               layout: { page: 1, x: 0, y: 2, w: 2, h: 2 },
@@ -85,6 +86,7 @@ export class MockLLMClient implements LLMClient {
               dialogues: [{ speaker: '主人公', text: '…誰かいるのか?', kind: 'speech' }],
               imagePrompt: 'manga panel, close-up of a boy peering into a dark alley, surprised expression',
               characters: ['主人公'],
+              background: '路地裏',
             },
             {
               layout: { page: 1, x: 2, y: 2, w: 2, h: 2 },
@@ -92,6 +94,7 @@ export class MockLLMClient implements LLMClient {
               dialogues: [{ speaker: '主人公', text: 'おい、大丈夫か!?', kind: 'speech' }],
               imagePrompt: 'manga panel, a silver-haired girl collapsed in an alley, a glowing pendant on her chest',
               characters: ['主人公', '少女'],
+              background: '路地裏',
             },
             {
               layout: { page: 1, x: 0, y: 4, w: 4, h: 2 },
@@ -128,6 +131,14 @@ export class MockLLMClient implements LLMClient {
         return JSON.stringify({
           applied: true,
           note: '変更指示を構成データに反映しました（モック）。',
+        });
+
+      case 'ref_image':
+        return JSON.stringify({
+          prompt:
+            'character reference sheet, front view and side view, full body, ' +
+            'a silver-haired girl in a white dress with an antique pendant, ' +
+            'neutral gray background, consistent design, clean lineart',
         });
 
       case 'summarize':
