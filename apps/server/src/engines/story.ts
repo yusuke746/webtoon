@@ -2,6 +2,7 @@ import type { Character, Dialogue, Episode, Foreshadowing, Panel, PanelLayout, P
 import { db, rowToCharacter, rowToEpisode, rowToForeshadowing, rowToPanel, rowToProject } from '../db.js';
 import { getLLMClient, extractJson } from '../llm/index.js';
 import { getImageClient } from '../image/index.js';
+import { persistImage } from '../image/storage.js';
 import { charactersPrompt, panelsPrompt, structurePrompt } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds } from './visual.js';
@@ -187,7 +188,9 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
       backgroundRefImageUrl: background?.refImageUrl ?? null,
       extraInput: style?.extraInput,
     });
-    db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(result.url, panelId);
+    // Replicate の出力URLは失効するため、ローカルへ保存して配信URLに差し替える
+    const url = await persistImage(result.url, `panel-${panelId}`);
+    db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(url, panelId);
   } catch (e) {
     db.prepare("UPDATE panels SET status = 'error' WHERE id = ?").run(panelId);
     throw e;
@@ -206,10 +209,32 @@ export async function generateEpisodeImages(
   const panels = listPanels(episodeId);
   const pending = panels.filter((p) => p.status !== 'done');
   let done = 0;
+  const failed: string[] = [];
   for (const p of pending) {
-    await generatePanelImage(p.id);
+    const label = `P${p.layout.page}-${p.index + 1}`;
+    // Replicate 側の一時エラー（Upstream provider is unavailable 等）があるため、
+    // コマ単位でリトライし、それでも駄目なら残りのコマは続行して最後にまとめて報告する
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await generatePanelImage(p.id);
+        break;
+      } catch (e) {
+        if (attempt >= MAX_ATTEMPTS) {
+          console.warn(`[image] ${label} は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
+          failed.push(label);
+          break;
+        }
+        console.warn(`[image] ${label} の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
     done += 1;
-    onProgress?.(done, pending.length, `P${p.layout.page}-${p.index + 1}`);
+    onProgress?.(done, pending.length, label);
+  }
+  if (failed.length > 0) {
+    // ジョブは失敗として報告するが、成功したコマは保存済み。再実行すれば失敗分だけ再作画される
+    throw new Error(`${failed.length} コマの作画に失敗しました: ${failed.join(', ')}（再実行で失敗分のみ再作画されます）`);
   }
   db.prepare("UPDATE episodes SET status = 'rendered' WHERE id = ?").run(episodeId);
   return listPanels(episodeId);

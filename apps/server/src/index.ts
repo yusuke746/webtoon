@@ -6,10 +6,13 @@ import express from 'express';
 import cors from 'cors';
 import { router } from './routes.js';
 import { failStaleJobs } from './engines/jobs.js';
+import { IMAGES_DIR } from './image/storage.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+// 生成画像はローカル保存して配信する（Replicate の出力URLは約1時間で失効するため）
+app.use('/api/images', express.static(IMAGES_DIR, { maxAge: '365d', immutable: true }));
 app.use('/api', router);
 
 // エラーハンドラ（エンジン層の throw をここで JSON 化）
