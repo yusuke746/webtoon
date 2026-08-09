@@ -154,17 +154,36 @@ export function startRefImagesJob(
         'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
       );
 
+      // Replicate 側の一時エラーがあるため1枚単位でリトライし、駄目でも残りは続行する
+      let failures = 0;
       for (let i = 0; i < count; i++) {
-        const result = await image.generate({
-          prompt: [style?.stylePrompt, prompt].filter(Boolean).join(', '),
-          model,
-          styleLoraUrl: style?.loraUrl,
-          // キャラ設定画は縦長、背景は横長が扱いやすい
-          aspectRatio: kind === 'background' ? '16:9' : '3:4',
-          extraInput: style?.extraInput,
-        });
-        insert.run(projectId, kind, ownerId, result.url, prompt);
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            const result = await image.generate({
+              prompt: [style?.stylePrompt, prompt].filter(Boolean).join(', '),
+              model,
+              styleLoraUrl: style?.loraUrl,
+              // キャラ設定画は縦長、背景は横長が扱いやすい
+              aspectRatio: kind === 'background' ? '16:9' : '3:4',
+              extraInput: style?.extraInput,
+            });
+            insert.run(projectId, kind, ownerId, result.url, prompt);
+            break;
+          } catch (e) {
+            if (attempt >= MAX_ATTEMPTS) {
+              console.warn(`[ref-images] ${i + 1}枚目は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
+              failures += 1;
+              break;
+            }
+            console.warn(`[ref-images] ${i + 1}枚目の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
+            await new Promise((r) => setTimeout(r, 5000 * attempt));
+          }
+        }
         ctx.advance(`画像を生成中（${i + 1}/${count}）`);
+      }
+      if (failures >= count) {
+        throw new Error(`参照画像を1枚も生成できませんでした（${count}枚中 ${failures} 失敗）`);
       }
 
       ctx.setResultRef(`${kind}:${ownerId}`);

@@ -10,8 +10,8 @@
 | 2 | **カスタマイズ自由度** | 画風・コマ割りルール・構成テンプレートを作品ごとに上書き可能。全生成ステップに「手動編集 → 再生成」ループあり                                                                       |
 | 3 | **AI同士の議論機能**   | 編集者 / プロット担当 / 読者代表の3役の Claude が議題を議論し合意案を生成。ログ保存・ユーザー介入・採否選択・構成への自動反映に対応（`apps/server/src/engines/discussion.ts`）     |
 | 4 | **データの使い回し**   | キャラ・世界観・画風を「ライブラリアセット」として保存し、別作品へキャスティング可能                                                                                                 |
-| 5 | **みやすいUI/UX**      | 制作フローを「エピソード選択 → シーン構成 → ネーム生成 → 作画」のステッパーで可視化し、その順に画面遷移する。長時間処理は非同期ジョブ化して進捗を表示                        |
-| 6 | **一貫性アセット工房** | キャラ・背景の参照画像を Replicate で複数枚生成して1枚を採用。さらに対象専用の LoRA を Replicate の trainings API で学習できる                                                |
+| 5 | **みやすいUI/UX**      | 制作フローを「エピソード選択 → シーン構成 → ネーム生成 → 作画」のステッパーで可視化し、その順に画面遷移する。長時間処理は非同期ジョブ化して進捗を表示                             |
+| 6 | **一貫性アセット工房** | キャラ・背景の参照画像を Replicate で複数枚生成して1枚を採用。さらに対象専用の LoRA を Replicate の trainings API で学習できる                                                       |
 
 ## 制作フロー
 
@@ -33,11 +33,11 @@
 
 「参照画像URL」「LoRA URL」を手入力する欄しかなかった箇所に、生成手段を用意している。
 
-| 手段                 | 場所                                     | 内容                                                                                   |
-| -------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| **参照画像**   | キャラクター / 背景 → ビジュアル工房    | 設定文 →（Claude）英語プロンプト → Replicate で候補を複数枚生成 → 1枚を「採用」   |
-| **LoRA学習**   | 同上 → LoRAタブ                         | 採用候補を ZIP 化 → Replicate files API へアップロード → trainings API で学習       |
-| **背景**       | サイドバー「背景・ロケーション」         | 場所を登録すると、ネーム生成時にコマへ自動割り当て（名前一致）され作画へ渡る            |
+| 手段               | 場所                                  | 内容                                                                               |
+| ------------------ | ------------------------------------- | ---------------------------------------------------------------------------------- |
+| **参照画像** | キャラクター / 背景 → ビジュアル工房 | 設定文 →（Claude）英語プロンプト → Replicate で候補を複数枚生成 → 1枚を「採用」 |
+| **LoRA学習** | 同上 → LoRAタブ                      | 採用候補を ZIP 化 → Replicate files API へアップロード → trainings API で学習    |
+| **背景**     | サイドバー「背景・ロケーション」      | 場所を登録すると、ネーム生成時にコマへ自動割り当て（名前一致）され作画へ渡る       |
 
 採用した参照画像・学習した LoRA は、作画時に自動でパネルへ渡される。
 背景（ロケーション）もキャラと同じく参照画像・LoRA の両方を持てる。
@@ -122,22 +122,22 @@ cp .env.example .env    # Windows: copy .env.example .env
 優先順位は **シェルの環境変数 > `.env.local` > `.env`**。`.env` / `.env.local` は `.gitignore` 済みです。
 一時的に切り替えたい場合はシェル側が勝つため、`IMAGE_CLIENT=mock npm run dev` のように上書きできます。
 
-| 変数                    | 既定値                             | 説明                                                                      |
-| ----------------------- | ---------------------------------- | ------------------------------------------------------------------------- |
-| `LLM_CLIENT`          | `claude`                         | `claude`（CLI サブプロセス） / `mock`（開発用）                       |
-| `CLAUDE_CLI_PATH`     | `claude`                         | Claude CLI のパス                                                         |
-| `CLAUDE_CLI_MODEL`    | (CLI 既定)                         | `--model` に渡すモデル名                                                |
-| `LLM_TIMEOUT_MS`      | `300000`                         | CLI 呼び出しのタイムアウト                                                |
-| `DISCUSSION_ROUNDS`   | `2`                              | AI議論のラウンド数                                                        |
-| `IMAGE_CLIENT`        | 自動                               | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |
-| `REPLICATE_API_TOKEN` | —                                 | Replicate の API トークン                                                 |
-| `REPLICATE_MODEL`     | `black-forest-labs/flux-schnell` | 画風未設定時のフォールバックモデル                                        |
-| `REPLICATE_LORA_TRAINER` | —                              | LoRA学習モデル。`owner/name:versionId` 形式（version 必須）             |
-| `REPLICATE_LORA_DESTINATION` | —                          | LoRA学習の出力先 `owner/model`（Replicate 上に事前作成が必要）          |
-| `LORA_POLL_INTERVAL_MS` | `15000`                        | 学習状況のポーリング間隔                                                  |
-| `LORA_TIMEOUT_MS`     | `5400000`                        | 学習の打ち切り時間（既定90分）                                            |
-| `PORT`                | `3001`                           | API サーバーのポート                                                      |
-| `DATA_DIR`            | `./data`                         | SQLite DB の保存先                                                        |
+| 変数                           | 既定値                             | 説明                                                                      |
+| ------------------------------ | ---------------------------------- | ------------------------------------------------------------------------- |
+| `LLM_CLIENT`                 | `claude`                         | `claude`（CLI サブプロセス） / `mock`（開発用）                       |
+| `CLAUDE_CLI_PATH`            | `claude`                         | Claude CLI のパス                                                         |
+| `CLAUDE_CLI_MODEL`           | (CLI 既定)                         | `--model` に渡すモデル名                                                |
+| `LLM_TIMEOUT_MS`             | `300000`                         | CLI 呼び出しのタイムアウト                                                |
+| `DISCUSSION_ROUNDS`          | `2`                              | AI議論のラウンド数                                                        |
+| `IMAGE_CLIENT`               | 自動                               | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |
+| `REPLICATE_API_TOKEN`        | —                                 | Replicate の API トークン                                                 |
+| `REPLICATE_MODEL`            | `black-forest-labs/flux-schnell` | 画風未設定時のフォールバックモデル                                        |
+| `REPLICATE_LORA_TRAINER`     | —                                 | LoRA学習モデル。`owner/name:versionId` 形式（version 必須）             |
+| `REPLICATE_LORA_DESTINATION` | —                                 | LoRA学習の出力先`owner/model`（Replicate 上に事前作成が必要）           |
+| `LORA_POLL_INTERVAL_MS`      | `15000`                          | 学習状況のポーリング間隔                                                  |
+| `LORA_TIMEOUT_MS`            | `5400000`                        | 学習の打ち切り時間（既定90分）                                            |
+| `PORT`                       | `3001`                           | API サーバーのポート                                                      |
+| `DATA_DIR`                   | `./data`                         | SQLite DB の保存先                                                        |
 
 Claude CLI / Replicate なしで動作確認する場合:
 
@@ -158,26 +158,26 @@ LLM_CLIENT=mock IMAGE_CLIENT=mock npm run dev
 
 ## 主要 API
 
-| メソッド | パス                                      | 説明                               |
-| -------- | ----------------------------------------- | ---------------------------------- |
-| POST     | `/api/projects/:id/generate/structure`  | 構成 + 伏線の生成                  |
-| POST     | `/api/projects/:id/generate/characters` | キャラ生成                         |
-| POST     | `/api/episodes/:id/generate/panels`     | ネーム生成                         |
-| POST     | `/api/episodes/:id/generate/images`     | 一括作画                           |
-| GET      | `/api/projects/:id/foreshadow-warnings` | 伏線回収漏れ警告                   |
-| POST     | `/api/projects/:id/discussions`         | AI議論の開始                       |
-| POST     | `/api/discussions/:id/intervene`        | 議論への介入                       |
-| POST     | `/api/discussions/:id/decision`         | 採否（採用時は構成へ反映可）       |
-| POST     | `/api/projects/:id/apply-change`        | 自然言語の変更指示を構成へ反映     |
-| POST     | `/api/assets/:type/save/:itemId`        | アセットをライブラリへ保存         |
-| POST     | `/api/projects/:id/cast/:type/:assetId` | ライブラリから作品へキャスティング |
-| GET      | `/api/jobs/:id`                         | 非同期ジョブの進捗                 |
-| GET      | `/api/projects/:id/jobs/active`         | 実行中ジョブ一覧                   |
-| POST     | `/api/projects/:id/ref-images/:kind/:ownerId/generate` | 参照画像の候補生成   |
-| POST     | `/api/ref-images/:id/select`            | 候補を採用（refImageUrl へ反映）   |
-| GET/POST | `/api/projects/:id/backgrounds`         | 背景の一覧・作成                   |
-| POST     | `/api/projects/:id/lora-trainings`      | LoRA学習の開始                     |
-| POST     | `/api/projects/:id/lora-trainings/validate` | 学習の前提条件チェック         |
+| メソッド | パス                                                     | 説明                               |
+| -------- | -------------------------------------------------------- | ---------------------------------- |
+| POST     | `/api/projects/:id/generate/structure`                 | 構成 + 伏線の生成                  |
+| POST     | `/api/projects/:id/generate/characters`                | キャラ生成                         |
+| POST     | `/api/episodes/:id/generate/panels`                    | ネーム生成                         |
+| POST     | `/api/episodes/:id/generate/images`                    | 一括作画                           |
+| GET      | `/api/projects/:id/foreshadow-warnings`                | 伏線回収漏れ警告                   |
+| POST     | `/api/projects/:id/discussions`                        | AI議論の開始                       |
+| POST     | `/api/discussions/:id/intervene`                       | 議論への介入                       |
+| POST     | `/api/discussions/:id/decision`                        | 採否（採用時は構成へ反映可）       |
+| POST     | `/api/projects/:id/apply-change`                       | 自然言語の変更指示を構成へ反映     |
+| POST     | `/api/assets/:type/save/:itemId`                       | アセットをライブラリへ保存         |
+| POST     | `/api/projects/:id/cast/:type/:assetId`                | ライブラリから作品へキャスティング |
+| GET      | `/api/jobs/:id`                                        | 非同期ジョブの進捗                 |
+| GET      | `/api/projects/:id/jobs/active`                        | 実行中ジョブ一覧                   |
+| POST     | `/api/projects/:id/ref-images/:kind/:ownerId/generate` | 参照画像の候補生成                 |
+| POST     | `/api/ref-images/:id/select`                           | 候補を採用（refImageUrl へ反映）   |
+| GET/POST | `/api/projects/:id/backgrounds`                        | 背景の一覧・作成                   |
+| POST     | `/api/projects/:id/lora-trainings`                     | LoRA学習の開始                     |
+| POST     | `/api/projects/:id/lora-trainings/validate`            | 学習の前提条件チェック             |
 
 ### 非同期ジョブ
 
