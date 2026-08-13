@@ -10,6 +10,7 @@ import {
   cancelTraining, createTraining, downloadImage, getTraining, hasReplicateToken, uploadFile,
 } from '../image/replicateApi.js';
 import { createZip } from '../image/zip.js';
+import { persistImage } from '../image/storage.js';
 import { refImagePrompt } from '../prompts.js';
 import { startJob } from './jobs.js';
 
@@ -191,19 +192,127 @@ export function startRefImagesJob(
   );
 }
 
-/** 候補の1枚を「正」として採用し、対象の ref_image_url へ書き込む */
-export function selectRefImage(refImageId: number): RefImage {
+/**
+ * 候補の1枚を「正」として採用し、対象の ref_image_url へ書き込む。
+ * Replicate の出力URL（replicate.delivery）は約1時間で失効するため、
+ * 採用時にローカルへ保存して永続URL（/api/images/…）に差し替える。
+ */
+export async function selectRefImage(refImageId: number): Promise<RefImage> {
   const ref = getRefImage(refImageId);
   const meta = REF_TARGET[ref.kind];
+
+  const url = await persistImage(ref.url, `ref-${ref.id}`);
+  if (url !== ref.url) {
+    db.prepare('UPDATE ref_images SET url = ? WHERE id = ?').run(url, ref.id);
+  }
 
   db.prepare('UPDATE ref_images SET selected = 0 WHERE kind = ? AND owner_id = ?').run(ref.kind, ref.ownerId);
   db.prepare('UPDATE ref_images SET selected = 1 WHERE id = ?').run(refImageId);
 
   // art_styles には ref_image_url 列がないため、画像を持てる対象だけ更新する
   if (ref.kind !== 'style') {
-    db.prepare(`UPDATE ${meta.table} SET ref_image_url = ? WHERE id = ?`).run(ref.url, ref.ownerId);
+    db.prepare(`UPDATE ${meta.table} SET ref_image_url = ? WHERE id = ?`).run(url, ref.ownerId);
   }
   return getRefImage(refImageId);
+}
+
+// ============================================================
+// 採用画像からのバリエーション生成（LoRA学習用の同一キャラ複数画像）
+// ============================================================
+
+/**
+ * LoRA学習には同一デザインの画像が10枚前後必要だが、テキストからの候補生成は
+ * 1枚ごとに別デザインになってしまう。そこで «採用済みの1枚» を基準画像として
+ * 画像編集モデル（既定: flux-kontext-pro）にアングル・ポーズ違いを生成させる。
+ */
+const VARIATION_PROMPTS = [
+  'full body front view, standing straight, arms relaxed at sides',
+  'full body back view, standing',
+  'full body three-quarter view, walking forward',
+  'full body side profile view, standing',
+  'upper body close-up, gentle smile',
+  'upper body close-up, serious determined expression',
+  'sitting on the ground, one knee raised',
+  'dynamic running pose',
+  'arms crossed, confident stance',
+  'looking back over the shoulder, surprised expression',
+  'crouching, reaching out with one hand',
+  'upper body, shouting with intense emotion',
+];
+
+export function startRefVariationsJob(
+  projectId: number,
+  kind: RefImageKind,
+  ownerId: number,
+  count: number,
+): Job {
+  const { name } = loadRefTarget(kind, ownerId);
+  if (kind === 'style') throw new Error('画風にはバリエーション生成は使えません');
+  const targetRow = db
+    .prepare(`SELECT ref_image_url FROM ${REF_TARGET[kind].table} WHERE id = ?`)
+    .get(ownerId) as any;
+  const baseImage: string | null = targetRow?.ref_image_url ?? null;
+  if (!baseImage) throw new Error('先に参照画像を1枚「採用」してください（採用画像を基準に生成します）');
+
+  const kindLabel = { character: 'キャラ', background: '背景', style: '画風' }[kind];
+  const model = process.env.REPLICATE_VARIATION_MODEL ?? 'black-forest-labs/flux-kontext-pro';
+  // 採用候補の生成プロンプトがあれば画風の口調を引き継ぐ
+  const selected = db
+    .prepare('SELECT prompt FROM ref_images WHERE kind = ? AND owner_id = ? AND selected = 1')
+    .get(kind, ownerId) as any;
+  const styleHint = /monochrome|black and white/i.test(selected?.prompt ?? '')
+    ? 'black and white manga lineart style, monochrome'
+    : 'same art style as the input image';
+
+  return startJob(
+    {
+      projectId,
+      kind: 'ref_images',
+      label: `${kindLabel}学習用バリエーション生成: ${name}`,
+      totalSteps: count,
+      step: `採用画像を基準に ${count} 枚生成します…`,
+    },
+    async (ctx) => {
+      const image = getImageClient();
+      const insert = db.prepare(
+        'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
+      );
+      let failures = 0;
+      for (let i = 0; i < count; i++) {
+        const variation = VARIATION_PROMPTS[i % VARIATION_PROMPTS.length];
+        const prompt =
+          `Redraw the exact same character with identical face, hairstyle, outfit and accessories, ` +
+          `but change the pose: ${variation}. Plain white background, ${styleHint}.`;
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            const result = await image.generate({
+              prompt,
+              model,
+              aspectRatio: kind === 'background' ? '16:9' : '3:4',
+              // kontext 系は input_image を受け取る。ローカルURLはクライアント側で data URI 化される
+              extraInput: { input_image: baseImage },
+            });
+            // 学習開始まで時間が空いても失効しないよう、その場でローカル保存する
+            const url = await persistImage(result.url, `ref-var-${ownerId}-${i}`);
+            insert.run(projectId, kind, ownerId, url, prompt);
+            break;
+          } catch (e) {
+            if (attempt >= MAX_ATTEMPTS) {
+              console.warn(`[ref-variations] ${i + 1}枚目は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
+              failures += 1;
+              break;
+            }
+            console.warn(`[ref-variations] ${i + 1}枚目の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
+            await new Promise((r) => setTimeout(r, 5000 * attempt));
+          }
+        }
+        ctx.advance(`バリエーションを生成中（${i + 1}/${count}）`);
+      }
+      if (failures >= count) throw new Error(`バリエーションを1枚も生成できませんでした`);
+      ctx.setResultRef(`${kind}:${ownerId}`);
+    },
+  );
 }
 
 export function deleteRefImage(id: number): void {

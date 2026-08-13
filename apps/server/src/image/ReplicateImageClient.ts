@@ -1,4 +1,5 @@
 import { resolveConsistencyInputs, type ImageClient, type ImageRequest, type ImageResult } from './ImageClient.js';
+import { localImageToDataUri } from './storage.js';
 
 /**
  * Replicate API で画像生成する実装。
@@ -36,6 +37,14 @@ export class ReplicateImageClient implements ImageClient {
 
     // クレジット残高が $5 未満だと「毎分6リクエスト・バースト1」に制限されるため、
     // 429 は retry_after（秒）を尊重してリトライする
+    // ローカル保存した画像（/api/images/…）は外部から到達できないため data URI にして渡す
+    for (const key of ['image', 'input_image'] as const) {
+      const v = input[key];
+      if (typeof v === 'string' && v.startsWith('/api/images/')) {
+        input[key] = await localImageToDataUri(v);
+      }
+    }
+
     // "owner/name" は models エンドポイント（公式モデル用）、
     // "owner/name:versionId" は /v1/predictions に version を渡す（個人・学習済みモデル用）
     const versionMatch = req.model.match(/^[^:]+:(.+)$/);

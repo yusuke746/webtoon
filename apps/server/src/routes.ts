@@ -15,7 +15,7 @@ import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
 import {
   cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
   listLoraTrainings, listRefImages, selectRefImage, startLoraTrainingJob, startRefImagesJob,
-  updateBackground, validateLoraOptions,
+  startRefVariationsJob, updateBackground, validateLoraOptions,
 } from './engines/visual.js';
 
 export const router = Router();
@@ -404,9 +404,23 @@ router.post('/projects/:id/ref-images/:kind/:ownerId/generate', wrap((req, res) 
   res.status(202).json(job);
 }));
 
+/**
+ * 採用済みの参照画像を基準に、同一キャラのアングル・ポーズ違いを生成する（LoRA学習用）。
+ * バックグラウンド実行。Job を返す。
+ */
+router.post('/projects/:id/ref-images/:kind/:ownerId/variations', wrap((req, res) => {
+  const kind = req.params.kind as RefImageKind;
+  if (!['character', 'background'].includes(kind)) {
+    res.status(400).json({ error: `バリエーション生成に対応していない種別です: ${kind}` }); return;
+  }
+  const count = Math.min(Math.max(Number(req.body?.count ?? 10), 1), 12);
+  const job = startRefVariationsJob(id(req), kind, id(req, 'ownerId'), count);
+  res.status(202).json(job);
+}));
+
 /** 候補の1枚を採用（対象の refImageUrl に反映される） */
-router.post('/ref-images/:id/select', wrap((req, res) => {
-  res.json(selectRefImage(id(req)));
+router.post('/ref-images/:id/select', wrap(async (req, res) => {
+  res.json(await selectRefImage(id(req)));
 }));
 
 router.delete('/ref-images/:id', wrap((req, res) => {

@@ -123,6 +123,9 @@ export const api = {
   generateRefImages: (
     projectId: number, kind: RefImageKind, ownerId: number, count: number, prompt?: string,
   ) => post<Job>(`/projects/${projectId}/ref-images/${kind}/${ownerId}/generate`, { count, prompt }),
+  generateRefVariations: (
+    projectId: number, kind: RefImageKind, ownerId: number, count: number,
+  ) => post<Job>(`/projects/${projectId}/ref-images/${kind}/${ownerId}/variations`, { count }),
   selectRefImage: (id: number) => post<RefImage>(`/ref-images/${id}/select`),
   deleteRefImage: (id: number) => del<{ ok: true }>(`/ref-images/${id}`),
 

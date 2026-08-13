@@ -46,6 +46,14 @@ export function RefImageStudio({
       tracker.track(job);
     });
 
+  const generateVariations = () =>
+    run('学習用バリエーションの生成', async () => {
+      const job = await api.generateRefVariations(projectId, kind, ownerId, 10);
+      tracker.track(job);
+    });
+
+  const hasAdopted = !!images?.some((img) => img.selected);
+
   const lastPrompt = images?.[0]?.prompt ?? '';
   const wide = kind === 'background';
 
@@ -76,6 +84,15 @@ export function RefImageStudio({
         <button className="ghost sm" onClick={() => setShowPrompt((v) => !v)}>
           {showPrompt ? 'プロンプト指定を閉じる' : 'プロンプトを指定する'}
         </button>
+        {hasAdopted && kind !== 'style' && (
+          <button
+            disabled={tracker.running}
+            onClick={generateVariations}
+            title="採用中の画像を基準に、同一デザインのアングル・ポーズ違いを10枚生成します（LoRA学習用）"
+          >
+            採用画像から学習用に10枚生成
+          </button>
+        )}
       </div>
 
       {showPrompt && (

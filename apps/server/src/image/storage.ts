@@ -19,6 +19,25 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/gif': '.gif',
 };
 
+/** 配信用パス（/api/images/<file>）をディスク上の絶対パスへ変換する。対象外のURLは null */
+export function localImageFile(url: string): string | null {
+  const m = url.match(/^\/api\/images\/([^/?#]+)$/);
+  return m ? path.join(IMAGES_DIR, m[1]) : null;
+}
+
+/**
+ * ローカル配信URLを data URI に変換する（Replicate の画像入力用）。
+ * ローカル開発ではサーバーが外部から到達できないため、URL のままでは Replicate 側が取得できない。
+ */
+export async function localImageToDataUri(url: string): Promise<string> {
+  const file = localImageFile(url);
+  if (!file) return url;
+  const { readFile } = await import('node:fs/promises');
+  const buf = await readFile(file);
+  const ext = path.extname(file).slice(1) || 'webp';
+  return `data:image/${ext};base64,${buf.toString('base64')}`;
+}
+
 /**
  * URL の画像をダウンロードして保存し、配信用パス（/api/images/<file>）を返す。
  * すでにローカル配信URLの場合はそのまま返す。

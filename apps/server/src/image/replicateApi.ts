@@ -115,6 +115,15 @@ export async function cancelTraining(id: string): Promise<void> {
 // ---------- 画像のダウンロード（学習ZIPを組み立てるため） ----------
 
 export async function downloadImage(url: string): Promise<{ bytes: Uint8Array; ext: string }> {
+  // ローカル保存済みの画像はディスクから直接読む（サーバー自身のURLを fetch しない）
+  const { localImageFile } = await import('./storage.js');
+  const file = localImageFile(url);
+  if (file) {
+    const { readFile } = await import('node:fs/promises');
+    const bytes = new Uint8Array(await readFile(file));
+    const ext = file.split('.').pop() ?? 'webp';
+    return { bytes, ext };
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`画像の取得に失敗しました (${res.status}): ${url}`);
   const buf = new Uint8Array(await res.arrayBuffer());
