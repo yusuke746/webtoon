@@ -11,6 +11,7 @@ export function EpisodePage() {
   const episodeId = Number(useParams().episodeId);
   const { data: project } = useFetch(() => api.getProject(projectId), [projectId]);
   const { data: episode, reload } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
+  const { data: health } = useFetch(() => api.health(), []);
   const { busy, error, run } = useAction();
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null);
 
@@ -20,6 +21,12 @@ export function EpisodePage() {
     <div>
       <p><Link to={`/projects/${projectId}`}>← ダッシュボード</Link></p>
       <h1>第{episode.number}話「{episode.title}」</h1>
+      {health?.imageClient === 'mock' && (
+        <div className="warning-item">
+          現在<strong>モック作画</strong>（プレースホルダ画像）で動作しています。画風は反映されません。
+          環境変数 <code>REPLICATE_API_TOKEN</code> を設定してサーバーを再起動すると、設定した画風で実際に作画されます。
+        </div>
+      )}
       {error && <div className="error-box">{error}</div>}
       {busy && <p className="spinner-note">⏳ {busy} を実行中…</p>}
 
@@ -66,9 +73,12 @@ export function EpisodePage() {
             </button>
           )}
         </div>
-        {episode.panels.length > 0 && (
-          <p className="muted">ネーム再生成は既存のコマ（手動編集含む）を置き換えます。</p>
-        )}
+        <p className="muted">
+          ネーム生成時は「ネーム演出担当」「読者代表」のAIが自動で批評→改稿を行います
+          （回数は<Link to={`/projects/${projectId}/settings`}>カスタマイズ</Link>で変更可。
+          批評ログは<Link to={`/projects/${projectId}/discussions`}>AI編集会議</Link>に保存されます）。
+          {episode.panels.length > 0 && ' 再生成は既存のコマ（手動編集含む）を置き換えます。'}
+        </p>
       </div>
 
       {episode.panels.length > 0 && (
@@ -171,6 +181,19 @@ function PanelEditor({
             <option value="thought">心の声</option>
             <option value="narration">ナレーション</option>
             <option value="sfx">効果音</option>
+          </select>
+          <select
+            style={{ width: 90 }}
+            value={d.position ?? ''}
+            onChange={(e) => setDialogue(i, { position: (e.target.value || undefined) as Dialogue['position'] })}
+          >
+            <option value="">位置: 自動</option>
+            <option value="top-right">右上</option>
+            <option value="top-left">左上</option>
+            <option value="middle-right">右中</option>
+            <option value="middle-left">左中</option>
+            <option value="bottom-right">右下</option>
+            <option value="bottom-left">左下</option>
           </select>
           <button
             className="danger"

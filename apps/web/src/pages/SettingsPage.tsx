@@ -9,6 +9,7 @@ export function SettingsPage() {
   const projectId = Number(useParams().projectId);
   const { data: project, reload } = useFetch(() => api.getProject(projectId), [projectId]);
   const { data: artStyles, reload: reloadStyles } = useFetch(() => api.listArtStyles(projectId), [projectId]);
+  const { data: health } = useFetch(() => api.health(), []);
   const { busy, error, run } = useAction();
 
   const [rules, setRules] = useState<PanelRules | null>(null);
@@ -66,6 +67,15 @@ export function SettingsPage() {
             <option value="ltr">左から右</option>
             <option value="vertical">縦スクロール（Webtoon）</option>
           </select>
+          <label>ネーム自動批評の回数（AI演出担当・読者代表が批評→改稿）</label>
+          <select
+            value={rules.nameReviewRounds ?? 1}
+            onChange={(e) => setRules({ ...rules, nameReviewRounds: Number(e.target.value) })}
+          >
+            <option value={0}>0回（批評なし・最速）</option>
+            <option value={1}>1回（推奨）</option>
+            <option value={2}>2回（高品質・時間がかかる）</option>
+          </select>
           <label>追加ルール（自由記述。ネーム生成プロンプトに反映）</label>
           <textarea
             rows={3}
@@ -118,7 +128,15 @@ export function SettingsPage() {
       <p className="muted">
         作画に使う Replicate モデル・スタイルプロンプト・LoRA を定義し、作品に適用します。
         適用中の画風は全コマの作画に使われます。
+        <strong>作画済みのコマには自動では反映されません。</strong>画風を変えたら各コマの「再作画」または「一括作画」を実行してください。
       </p>
+      {health?.imageClient === 'mock' && (
+        <div className="warning-item">
+          現在<strong>モック作画</strong>で動作しているため、画風を変えても生成画像には反映されません。
+          <code>REPLICATE_API_TOKEN</code> を設定してサーバーを再起動してください（起動ログに
+          <code>[image] using client: replicate</code> と出れば有効です）。
+        </div>
+      )}
       {artStyles?.map((s) => (
         <div className="card" key={s.id}>
           <div className="row" style={{ justifyContent: 'space-between' }}>

@@ -13,6 +13,8 @@ export interface PanelRules {
   gridRows: number;
   /** 読み方向 */
   readingDirection: 'rtl' | 'ltr' | 'vertical';
+  /** ネーム生成後に AI 批評→改稿を行う回数（0で無効） */
+  nameReviewRounds: number;
   /** 自由記述のレイアウト指示（例: "見開きの大ゴマを1話に1回入れる"） */
   customRules: string;
 }
@@ -146,10 +148,18 @@ export interface PanelLayout {
   h: number;
 }
 
+/** 吹き出しのコマ内配置。同一コマ内で重複させないことで被りを防ぐ */
+export type BubblePosition =
+  | 'top-left' | 'top-right'
+  | 'bottom-left' | 'bottom-right'
+  | 'middle-left' | 'middle-right';
+
 export interface Dialogue {
   speaker: string;
   text: string;
   kind: 'speech' | 'thought' | 'narration' | 'sfx';
+  /** 吹き出しの配置。未指定時はビューア側が読み方向に沿って自動配置 */
+  position?: BubblePosition;
 }
 
 export type PanelStatus = 'draft' | 'generating' | 'done' | 'error';
@@ -203,6 +213,7 @@ export const DEFAULT_PANEL_RULES: PanelRules = {
   gridCols: 4,
   gridRows: 6,
   readingDirection: 'rtl',
+  nameReviewRounds: 1,
   customRules: '',
 };
 

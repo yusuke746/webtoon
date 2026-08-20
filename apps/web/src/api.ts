@@ -30,6 +30,9 @@ export type EpisodeWithPanels = Episode & { panels: Panel[] };
 export type DiscussionWithMessages = Discussion & { messages: DiscussionMessage[] };
 
 export const api = {
+  // 稼働状態（どの LLM / 画像クライアントが有効か）
+  health: () => get<{ ok: boolean; llmClient: string; imageClient: string }>('/health'),
+
   // プロジェクト
   listProjects: () => get<Project[]>('/projects'),
   createProject: (title: string, synopsis: string) => post<Project>('/projects', { title, synopsis }),

@@ -11,6 +11,8 @@ import {
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
+import { getLLMClient } from './llm/index.js';
+import { getImageClient } from './image/index.js';
 
 export const router = Router();
 
@@ -24,7 +26,11 @@ const wrap =
 const id = (req: Request, name = 'id') => Number(req.params[name]);
 
 router.get('/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    llmClient: getLLMClient().name,
+    imageClient: getImageClient().name,
+  });
 });
 
 // ============ プロジェクト ============

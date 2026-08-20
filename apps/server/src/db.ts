@@ -130,8 +130,9 @@ export function rowToProject(r: Row): Project {
     title: r.title,
     synopsis: r.synopsis,
     artStyleId: r.art_style_id,
-    panelRules: r.panel_rules ? JSON.parse(r.panel_rules) : DEFAULT_PANEL_RULES,
-    storyTemplate: r.story_template ? JSON.parse(r.story_template) : DEFAULT_STORY_TEMPLATE,
+    // 旧データに新設フィールドがなくてもデフォルト値で補完する
+    panelRules: { ...DEFAULT_PANEL_RULES, ...(r.panel_rules ? JSON.parse(r.panel_rules) : {}) },
+    storyTemplate: { ...DEFAULT_STORY_TEMPLATE, ...(r.story_template ? JSON.parse(r.story_template) : {}) },
     createdAt: r.created_at,
   };
 }

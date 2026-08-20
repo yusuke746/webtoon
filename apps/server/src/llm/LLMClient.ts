@@ -7,7 +7,8 @@
 export type LLMTask =
   | 'structure'      // あらすじ → 話数構成・シーン・伏線案
   | 'characters'     // キャラクター設定生成
-  | 'panels'         // コマ割り・セリフ生成
+  | 'panels'         // コマ割り・セリフ生成（改稿含む）
+  | 'name_critique'  // ネーム批評（自動議論）
   | 'discussion'     // AI議論の1発言
   | 'consensus'      // 議論の合意形成・要約
   | 'apply_change'   // 要約ベースの変更指示の適用
