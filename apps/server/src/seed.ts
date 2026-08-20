@@ -3,6 +3,9 @@
  *   npm run seed   （ルートから）
  * 既に同タイトルの作品がある場合はスキップする（再実行しても重複しない）。
  */
+// db.js より «前» に置くこと（DATA_DIR をトップレベルで参照するため）
+import './env.js';
+
 import { db } from './db.js';
 
 const SAMPLE_TITLE = 'ムーンライト・アンティーク';

@@ -3,13 +3,13 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
-  ArtStyle, Character, Discussion, DiscussionMessage, Episode,
-  Foreshadowing, Panel, Project, Worldview,
+  ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
+  Foreshadowing, Job, LoraTraining, Panel, Project, RefImage, Worldview,
 } from '@manga/shared';
 import { DEFAULT_PANEL_RULES, DEFAULT_STORY_TEMPLATE } from '@manga/shared';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR ?? path.resolve(__dirname, '../../../data');
+export const DATA_DIR = process.env.DATA_DIR ?? path.resolve(__dirname, '../../../data');
 mkdirSync(DATA_DIR, { recursive: true });
 
 export const db = new DatabaseSync(path.join(DATA_DIR, 'manga.db'));
@@ -118,7 +118,77 @@ CREATE TABLE IF NOT EXISTS discussion_messages (
   content TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS backgrounds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  ref_image_url TEXT,
+  lora_url TEXT,
+  source_asset_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ref_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  owner_id INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  prompt TEXT NOT NULL DEFAULT '',
+  selected INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ref_images_owner ON ref_images (kind, owner_id);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  label TEXT NOT NULL DEFAULT '',
+  step TEXT NOT NULL DEFAULT '',
+  done_steps INTEGER NOT NULL DEFAULT 0,
+  total_steps INTEGER NOT NULL DEFAULT 1,
+  result_ref TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs (project_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS lora_trainings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  target_kind TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  trainer_model TEXT NOT NULL DEFAULT '',
+  destination TEXT NOT NULL DEFAULT '',
+  trigger_word TEXT NOT NULL DEFAULT '',
+  image_urls TEXT NOT NULL DEFAULT '[]',
+  replicate_id TEXT,
+  status TEXT NOT NULL DEFAULT 'preparing',
+  weights_url TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
+
+// ---------- 追加カラムのマイグレーション ----------
+// CREATE TABLE IF NOT EXISTS は既存テーブルへの列追加をしないため、個別に補う。
+
+/** 既に存在する場合は何もしない ALTER TABLE ADD COLUMN */
+function addColumnIfMissing(table: string, column: string, definition: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+// パネルに背景を紐付ける（作画時に背景の参照画像/LoRAを渡すため）
+addColumnIfMissing('panels', 'background_id', 'INTEGER');
 
 // ---------- 行 → ドメイン型 変換 ----------
 
@@ -217,7 +287,71 @@ export function rowToPanel(r: Row): Panel {
     imagePrompt: r.image_prompt,
     imageUrl: r.image_url,
     characterIds: JSON.parse(r.character_ids),
+    backgroundId: r.background_id ?? null,
     status: r.status,
+  };
+}
+
+export function rowToBackground(r: Row): Background {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    name: r.name,
+    description: r.description,
+    refImageUrl: r.ref_image_url,
+    loraUrl: r.lora_url,
+    sourceAssetId: r.source_asset_id,
+    createdAt: r.created_at,
+  };
+}
+
+export function rowToRefImage(r: Row): RefImage {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    kind: r.kind,
+    ownerId: r.owner_id,
+    url: r.url,
+    prompt: r.prompt,
+    selected: !!r.selected,
+    createdAt: r.created_at,
+  };
+}
+
+export function rowToJob(r: Row): Job {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    kind: r.kind,
+    status: r.status,
+    label: r.label,
+    step: r.step,
+    doneSteps: r.done_steps,
+    totalSteps: r.total_steps,
+    resultRef: r.result_ref,
+    error: r.error,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export function rowToLoraTraining(r: Row): LoraTraining {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    targetKind: r.target_kind,
+    targetId: r.target_id,
+    name: r.name,
+    trainerModel: r.trainer_model,
+    destination: r.destination,
+    triggerWord: r.trigger_word,
+    imageUrls: JSON.parse(r.image_urls),
+    replicateId: r.replicate_id,
+    status: r.status,
+    weightsUrl: r.weights_url,
+    error: r.error,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 

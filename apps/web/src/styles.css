@@ -1,10 +1,14 @@
 :root {
-  --bg: #f6f5f2;
+  --bg: #f5f4f1;
   --panel: #ffffff;
+  --panel-2: #fbfaf8;
   --ink: #1f2328;
   --sub: #6b7280;
+  --faint: #9ca3af;
   --line: #e5e3de;
+  --line-strong: #d4d1ca;
   --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-soft: #eef2ff;
   --warn: #b45309;
   --warn-bg: #fef3c7;
@@ -12,6 +16,10 @@
   --danger-bg: #fee2e2;
   --ok: #15803d;
   --ok-bg: #dcfce7;
+  --shadow-sm: 0 1px 2px rgba(16, 15, 30, 0.05);
+  --shadow-md: 0 4px 16px rgba(16, 15, 30, 0.08);
+  --shadow-lg: 0 24px 60px rgba(16, 15, 30, 0.22);
+  --radius: 12px;
 }
 
 * { box-sizing: border-box; }
@@ -25,83 +33,145 @@ body {
   line-height: 1.6;
 }
 
+/* ============================================================
+   レイアウト
+   ============================================================ */
+
 .layout { display: flex; min-height: 100vh; }
 
 .sidebar {
-  width: 220px;
+  width: 232px;
   flex-shrink: 0;
   background: #17151f;
   color: #d5d2e0;
-  padding: 16px 12px;
+  padding: 16px 12px 32px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 .sidebar .brand {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   color: #fff;
-  margin-bottom: 20px;
+  margin-bottom: 4px;
   padding: 0 8px;
 }
-.sidebar a {
-  display: block;
-  color: #d5d2e0;
-  text-decoration: none;
-  padding: 8px 10px;
-  border-radius: 8px;
-  margin-bottom: 2px;
-}
-.sidebar a:hover { background: #262234; }
-.sidebar a.active { background: var(--accent); color: #fff; }
-.sidebar .section {
+.sidebar .brand-sub {
   font-size: 11px;
   color: #8b87a0;
-  margin: 16px 8px 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  padding: 0 8px;
+  margin-bottom: 18px;
+}
+.sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d5d2e0;
+  text-decoration: none;
+  padding: 7px 10px;
+  border-radius: 8px;
+  margin-bottom: 1px;
+  font-size: 13px;
+}
+.sidebar a:hover { background: #262234; }
+.sidebar a.active { background: var(--accent); color: #fff; font-weight: 600; }
+.sidebar a .ico { width: 16px; text-align: center; flex-shrink: 0; }
+.sidebar .section {
+  font-size: 10px;
+  color: #706c85;
+  margin: 18px 10px 6px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+.sidebar .project-chip {
+  margin: 4px 8px 6px;
+  padding: 8px 10px;
+  background: #221e2e;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
-.main { flex: 1; padding: 24px 32px; max-width: 1100px; }
+.main { flex: 1; padding: 22px 30px 80px; max-width: 1180px; min-width: 0; }
 
-h1 { font-size: 22px; margin: 0 0 16px; }
-h2 { font-size: 17px; margin: 24px 0 10px; }
-h3 { font-size: 15px; margin: 16px 0 8px; }
+h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; margin: 26px 0 10px; }
+h3 { font-size: 14px; margin: 0 0 10px; }
+
+.page-head { margin-bottom: 18px; }
+.page-head .lead { color: var(--sub); font-size: 13px; margin: 0; }
+
+/* ============================================================
+   カード / 基本パーツ
+   ============================================================ */
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 16px;
   margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
 }
+.card.accent { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.card-head h3 { margin: 0; }
 
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.row.tight { gap: 6px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 780px) { .grid2 { grid-template-columns: 1fr; } }
+.spacer { flex: 1; }
 
 button {
   font: inherit;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--panel);
   color: var(--ink);
   border-radius: 8px;
   padding: 7px 14px;
   cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, opacity 0.12s;
+  white-space: nowrap;
 }
-button:hover { border-color: var(--accent); }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover { opacity: 0.9; }
-button.danger { color: var(--danger); }
-button:disabled { opacity: 0.5; cursor: wait; }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+button.danger { color: var(--danger); border-color: var(--line-strong); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); }
+button.ghost { border-color: transparent; background: transparent; color: var(--sub); }
+button.ghost:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
+button.sm { padding: 4px 10px; font-size: 12px; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 input, textarea, select {
   font: inherit;
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 8px 10px;
   background: #fff;
   color: var(--ink);
 }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 textarea { resize: vertical; min-height: 70px; }
-label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; }
+label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; font-weight: 600; }
+label .hint { font-weight: 400; color: var(--faint); }
 
 .badge {
   display: inline-block;
@@ -110,10 +180,12 @@ label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; 
   border-radius: 99px;
   background: var(--accent-soft);
   color: var(--accent);
+  font-weight: 600;
 }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.danger { background: var(--danger-bg); color: var(--danger); }
 .badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.neutral { background: #f1f0ee; color: var(--sub); }
 
 .warning-item {
   border-left: 4px solid var(--warn);
@@ -128,6 +200,7 @@ label { display: block; font-size: 12px; color: var(--sub); margin: 10px 0 4px; 
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 12px; color: var(--sub); }
+tr:last-child td { border-bottom: none; }
 
 .muted { color: var(--sub); font-size: 12px; }
 .error-box {
@@ -138,18 +211,315 @@ th { font-size: 12px; color: var(--sub); }
   margin-bottom: 12px;
   white-space: pre-wrap;
 }
+.info-box {
+  background: var(--accent-soft);
+  color: #3730a3;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
 
-/* AI議論 */
+.empty-state {
+  text-align: center;
+  padding: 36px 20px;
+  color: var(--sub);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.empty-state .big { font-size: 26px; margin-bottom: 8px; }
+
+/* ============================================================
+   ワークフローステッパー
+   ============================================================ */
+
+.stepper {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  overflow-x: auto;
+}
+.step {
+  flex: 1;
+  min-width: 128px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--sub);
+  text-align: left;
+  text-decoration: none;
+  position: relative;
+  cursor: pointer;
+}
+.step:hover:not(.disabled) { background: var(--panel-2); color: var(--ink); }
+.step.disabled { opacity: 0.45; cursor: not-allowed; }
+.step .num {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fff;
+}
+.step .label { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.step .sub { font-size: 11px; color: var(--faint); font-weight: 400; }
+.step.done .num { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+.step.done .label { color: var(--ink); }
+.step.current { background: var(--accent-soft); color: var(--accent); }
+.step.current .num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step.current .label { color: var(--accent); }
+.step + .step::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  transform: translateY(-50%);
+}
+
+/* ============================================================
+   ジョブ進捗 / モダンなローディング
+   ============================================================ */
+
+.progress {
+  height: 6px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #8b5cf6);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+.progress.indeterminate > span {
+  width: 35% !important;
+  animation: slide 1.4s ease-in-out infinite;
+}
+@keyframes slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+.job-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 21, 31, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+  animation: fade-in 0.2s ease;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.job-card {
+  background: var(--panel);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
+  padding: 26px 28px;
+  width: min(560px, 100%);
+  max-height: 84vh;
+  overflow-y: auto;
+  animation: rise 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.job-card h3 { font-size: 16px; margin: 0 0 2px; }
+.job-card .job-step { color: var(--accent); font-size: 13px; font-weight: 600; min-height: 20px; }
+.job-card .job-meta { color: var(--faint); font-size: 12px; }
+
+/* 実行中を示す3つの発光オーブ */
+.orbs { display: flex; gap: 7px; align-items: center; }
+.orbs i {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.orbs i:nth-child(2) { animation-delay: 0.16s; background: #7c6cf5; }
+.orbs i:nth-child(3) { animation-delay: 0.32s; background: #a78bfa; }
+@keyframes pulse {
+  0%, 100% { transform: scale(0.7); opacity: 0.4; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+/* 議論のライブ表示で「発言中…」を示す */
+.typing { display: inline-flex; gap: 4px; align-items: center; }
+.typing i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--faint);
+  animation: pulse 1s ease-in-out infinite;
+}
+.typing i:nth-child(2) { animation-delay: 0.15s; }
+.typing i:nth-child(3) { animation-delay: 0.3s; }
+
+.job-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--accent-soft);
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  padding: 9px 14px;
+  margin-bottom: 14px;
+}
+.job-strip .grow { flex: 1; min-width: 0; }
+.job-strip .t { font-size: 12px; font-weight: 700; color: #3730a3; }
+.job-strip .s { font-size: 11px; color: #4f46e5; }
+
+.skeleton {
+  background: linear-gradient(90deg, #eeece8 25%, #f7f6f4 50%, #eeece8 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ============================================================
+   タブ
+   ============================================================ */
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.tab {
+  border: none;
+  background: transparent;
+  padding: 9px 14px;
+  border-radius: 8px 8px 0 0;
+  color: var(--sub);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); background: var(--panel-2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ============================================================
+   参照画像ギャラリー
+   ============================================================ */
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.gallery-item {
+  position: relative;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel-2);
+  aspect-ratio: 3 / 4;
+}
+.gallery-item.wide { aspect-ratio: 16 / 9; }
+.gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-item.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gallery-item .pick {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.gallery-item:hover .pick { opacity: 1; }
+.gallery-item .pick button {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: transparent;
+}
+.gallery-item .flag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
+.asset-tile {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.asset-thumb {
+  width: 82px;
+  height: 104px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+  background: var(--panel-2);
+}
+.asset-thumb.wide { width: 140px; height: 80px; }
+.asset-thumb.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
+  padding: 6px;
+}
+
+/* ============================================================
+   AI議論
+   ============================================================ */
+
 .chat { display: flex; flex-direction: column; gap: 10px; }
-.chat-msg { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; background: #fff; }
+.chat-msg {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #fff;
+  animation: rise 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 .chat-msg .who { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+.chat-msg .body { white-space: pre-wrap; }
 .chat-msg.editor { border-left: 4px solid #4f46e5; }
 .chat-msg.plotter { border-left: 4px solid #0d9488; }
 .chat-msg.reader { border-left: 4px solid #d97706; }
 .chat-msg.user { border-left: 4px solid #be185d; background: #fdf2f8; }
 .chat-msg.facilitator { border-left: 4px solid #374151; background: #f3f4f6; }
+.chat-msg.pending { border-style: dashed; background: var(--panel-2); color: var(--sub); }
 
-/* ページビューア（コマ割りレンダリング） */
+/* ============================================================
+   ページビューア（コマ割りレンダリング）
+   ============================================================ */
+
 .page-sheet {
   position: relative;
   background: #fff;
@@ -193,3 +563,31 @@ th { font-size: 12px; color: var(--sub); }
 .bubble.sfx { border: none; background: transparent; font-weight: 700; font-size: 13px; }
 
 .spinner-note { color: var(--accent); font-size: 13px; }
+
+/* コマ一覧（作画ステップ） */
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+.panel-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+.panel-card .thumb {
+  aspect-ratio: 3 / 4;
+  background: var(--panel-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  font-size: 12px;
+  position: relative;
+}
+.panel-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.panel-card .meta { padding: 10px 12px; font-size: 12px; flex: 1; }
+.panel-card .acts { padding: 0 12px 12px; display: flex; gap: 6px; }

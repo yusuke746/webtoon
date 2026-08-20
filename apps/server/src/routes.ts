@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { DEFAULT_PANEL_RULES, DEFAULT_STORY_TEMPLATE } from '@manga/shared';
+import { DEFAULT_PANEL_RULES, DEFAULT_STORY_TEMPLATE, type RefImageKind } from '@manga/shared';
 import {
-  db, rowToArtStyle, rowToCharacter, rowToDiscussion, rowToEpisode,
+  db, rowToArtStyle, rowToBackground, rowToCharacter, rowToDiscussion, rowToEpisode,
   rowToForeshadowing, rowToPanel, rowToProject, rowToWorldview,
 } from './db.js';
 import {
@@ -13,6 +13,12 @@ import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } 
 import { applyChange } from './engines/changes.js';
 import { getLLMClient } from './llm/index.js';
 import { getImageClient } from './image/index.js';
+import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
+import {
+  cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
+  listLoraTrainings, listRefImages, selectRefImage, startLoraTrainingJob, startRefImagesJob,
+  startRefVariationsJob, updateBackground, validateLoraOptions,
+} from './engines/visual.js';
 
 export const router = Router();
 
@@ -94,8 +100,30 @@ router.post('/episodes/:id/generate/panels', wrap(async (req, res) => {
   res.json(await generatePanels(id(req)));
 }));
 
-router.post('/episodes/:id/generate/images', wrap(async (req, res) => {
-  res.json(await generateEpisodeImages(id(req)));
+/** 一括作画はコマ数ぶん時間がかかるためジョブとして実行し、Job を返す */
+router.post('/episodes/:id/generate/images', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const pending = listPanels(episodeId).filter((p) => p.status !== 'done');
+
+  const job = startJob(
+    {
+      projectId: episode.projectId,
+      kind: 'episode_images',
+      label: `第${episode.number}話の一括作画`,
+      totalSteps: Math.max(pending.length, 1),
+      step: `未作画コマ ${pending.length} 件を作画します…`,
+    },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await generateEpisodeImages(episodeId, (done, total, label) => {
+        ctx.advance(`作画中 ${done}/${total}: ${label}`);
+      });
+    },
+  );
+  res.status(202).json(job);
 }));
 
 router.post('/panels/:id/generate-image', wrap(async (req, res) => {
@@ -131,15 +159,17 @@ router.put('/panels/:id', wrap((req, res) => {
   const row = db.prepare('SELECT * FROM panels WHERE id = ?').get(id(req));
   if (!row) { res.status(404).json({ error: 'パネルが見つかりません' }); return; }
   const p = rowToPanel(row as any);
-  const { description, dialogues, imagePrompt, layout, characterIds } = req.body ?? {};
+  const { description, dialogues, imagePrompt, layout, characterIds, backgroundId } = req.body ?? {};
   db.prepare(
-    'UPDATE panels SET description = ?, dialogues = ?, image_prompt = ?, layout = ?, character_ids = ? WHERE id = ?',
+    `UPDATE panels SET description = ?, dialogues = ?, image_prompt = ?, layout = ?,
+      character_ids = ?, background_id = ? WHERE id = ?`,
   ).run(
     description ?? p.description,
     JSON.stringify(dialogues ?? p.dialogues),
     imagePrompt ?? p.imagePrompt,
     JSON.stringify(layout ?? p.layout),
     JSON.stringify(characterIds ?? p.characterIds),
+    backgroundId === undefined ? p.backgroundId : backgroundId,
     p.id,
   );
   res.json(rowToPanel(db.prepare('SELECT * FROM panels WHERE id = ?').get(p.id) as any));
@@ -243,10 +273,11 @@ router.get('/projects/:id/discussions', wrap((req, res) => {
   res.json(rows.map(rowToDiscussion));
 }));
 
-router.post('/projects/:id/discussions', wrap(async (req, res) => {
+/** 議論はバックグラウンド実行。discussion と進捗追跡用の job を返す */
+router.post('/projects/:id/discussions', wrap((req, res) => {
   const { topic } = req.body ?? {};
   if (!topic) { res.status(400).json({ error: 'topic は必須です' }); return; }
-  res.status(201).json(await startDiscussion(id(req), topic));
+  res.status(202).json(startDiscussion(id(req), topic));
 }));
 
 router.get('/discussions/:id', wrap((req, res) => {
@@ -254,10 +285,10 @@ router.get('/discussions/:id', wrap((req, res) => {
   res.json({ ...d, messages: listMessages(d.id) });
 }));
 
-router.post('/discussions/:id/intervene', wrap(async (req, res) => {
+router.post('/discussions/:id/intervene', wrap((req, res) => {
   const { comment } = req.body ?? {};
   if (!comment) { res.status(400).json({ error: 'comment は必須です' }); return; }
-  res.json(await intervene(id(req), comment));
+  res.status(202).json(intervene(id(req), comment));
 }));
 
 router.post('/discussions/:id/decision', wrap(async (req, res) => {
@@ -323,6 +354,129 @@ router.post('/projects/:id/worldviews', wrap((req, res) => {
   res.status(201).json(rowToWorldview(db.prepare('SELECT * FROM worldviews WHERE id = ?').get(Number(result.lastInsertRowid)) as any));
 }));
 
+// ============ ジョブ（非同期処理の進捗） ============
+
+router.get('/projects/:id/jobs', wrap((req, res) => {
+  res.json(listJobs(id(req)));
+}));
+
+router.get('/projects/:id/jobs/active', wrap((req, res) => {
+  res.json(listActiveJobs(id(req)));
+}));
+
+router.get('/jobs/:id', wrap((req, res) => {
+  res.json(getJob(id(req)));
+}));
+
+// ============ 背景（背景・ロケーションの一貫性） ============
+
+router.get('/projects/:id/backgrounds', wrap((req, res) => {
+  res.json(listBackgrounds(id(req)));
+}));
+
+router.post('/projects/:id/backgrounds', wrap((req, res) => {
+  const { name } = req.body ?? {};
+  if (!name) { res.status(400).json({ error: 'name は必須です' }); return; }
+  res.status(201).json(createBackground(id(req), req.body));
+}));
+
+router.put('/backgrounds/:id', wrap((req, res) => {
+  res.json(updateBackground(id(req), req.body ?? {}));
+}));
+
+router.delete('/backgrounds/:id', wrap((req, res) => {
+  deleteBackground(id(req));
+  res.json({ ok: true });
+}));
+
+// ============ 参照画像（一貫性アセットの候補画像） ============
+
+router.get('/ref-images/:kind/:ownerId', wrap((req, res) => {
+  const kind = req.params.kind as RefImageKind;
+  if (!['character', 'background', 'style'].includes(kind)) {
+    res.status(400).json({ error: `不明な種別: ${kind}` }); return;
+  }
+  res.json(listRefImages(kind, id(req, 'ownerId')));
+}));
+
+/** 参照画像を複数枚生成する（バックグラウンド実行。Job を返す） */
+router.post('/projects/:id/ref-images/:kind/:ownerId/generate', wrap((req, res) => {
+  const kind = req.params.kind as RefImageKind;
+  if (!['character', 'background', 'style'].includes(kind)) {
+    res.status(400).json({ error: `不明な種別: ${kind}` }); return;
+  }
+  const count = Math.min(Math.max(Number(req.body?.count ?? 4), 1), 8);
+  const job = startRefImagesJob(id(req), kind, id(req, 'ownerId'), count, req.body?.prompt);
+  res.status(202).json(job);
+}));
+
+/**
+ * 採用済みの参照画像を基準に、同一キャラのアングル・ポーズ違いを生成する（LoRA学習用）。
+ * バックグラウンド実行。Job を返す。
+ */
+router.post('/projects/:id/ref-images/:kind/:ownerId/variations', wrap((req, res) => {
+  const kind = req.params.kind as RefImageKind;
+  if (!['character', 'background'].includes(kind)) {
+    res.status(400).json({ error: `バリエーション生成に対応していない種別です: ${kind}` }); return;
+  }
+  const count = Math.min(Math.max(Number(req.body?.count ?? 10), 1), 12);
+  const job = startRefVariationsJob(id(req), kind, id(req, 'ownerId'), count);
+  res.status(202).json(job);
+}));
+
+/** 候補の1枚を採用（対象の refImageUrl に反映される） */
+router.post('/ref-images/:id/select', wrap(async (req, res) => {
+  res.json(await selectRefImage(id(req)));
+}));
+
+router.delete('/ref-images/:id', wrap((req, res) => {
+  deleteRefImage(id(req));
+  res.json({ ok: true });
+}));
+
+// ============ LoRA 学習 ============
+
+router.get('/projects/:id/lora-trainings', wrap((req, res) => {
+  res.json(listLoraTrainings(id(req)));
+}));
+
+/** 学習開始前の前提チェック（トークン・学習モデル・出力先・枚数） */
+router.post('/projects/:id/lora-trainings/validate', wrap((req, res) => {
+  const b = req.body ?? {};
+  res.json({
+    problems: validateLoraOptions({
+      targetKind: b.targetKind, targetId: Number(b.targetId),
+      imageUrls: b.imageUrls ?? [], triggerWord: b.triggerWord ?? '',
+      trainerModel: b.trainerModel, destination: b.destination,
+    }),
+    defaults: {
+      trainerModel: process.env.REPLICATE_LORA_TRAINER ?? '',
+      destination: process.env.REPLICATE_LORA_DESTINATION ?? '',
+    },
+  });
+}));
+
+router.post('/projects/:id/lora-trainings', wrap((req, res) => {
+  const b = req.body ?? {};
+  if (!b.targetKind || !b.targetId) {
+    res.status(400).json({ error: 'targetKind と targetId は必須です' }); return;
+  }
+  res.status(202).json(startLoraTrainingJob(id(req), {
+    targetKind: b.targetKind,
+    targetId: Number(b.targetId),
+    imageUrls: b.imageUrls ?? [],
+    triggerWord: b.triggerWord ?? '',
+    steps: b.steps ? Number(b.steps) : undefined,
+    loraRank: b.loraRank ? Number(b.loraRank) : undefined,
+    trainerModel: b.trainerModel || undefined,
+    destination: b.destination || undefined,
+  }));
+}));
+
+router.post('/lora-trainings/:id/cancel', wrap(async (req, res) => {
+  res.json(await cancelLoraTraining(id(req)));
+}));
+
 // ============ アセットライブラリ（データの使い回し・拡張4） ============
 // project_id が NULL の行 = 作品横断で再利用可能なライブラリアセット
 
@@ -330,6 +484,7 @@ const ASSET_TABLES = {
   character: 'characters',
   worldview: 'worldviews',
   art_style: 'art_styles',
+  background: 'backgrounds',
 } as const;
 type AssetType = keyof typeof ASSET_TABLES;
 
@@ -337,6 +492,7 @@ const assetMapper = {
   character: rowToCharacter,
   worldview: rowToWorldview,
   art_style: rowToArtStyle,
+  background: rowToBackground,
 } as const;
 
 router.get('/assets/:type', wrap((req, res) => {

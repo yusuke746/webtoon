@@ -2,11 +2,13 @@ import type { Character, Dialogue, Episode, Foreshadowing, Panel, PanelLayout, P
 import { db, rowToCharacter, rowToEpisode, rowToForeshadowing, rowToPanel, rowToProject } from '../db.js';
 import { getLLMClient, extractJson } from '../llm/index.js';
 import { getImageClient } from '../image/index.js';
+import { persistImage } from '../image/storage.js';
 import {
   NAME_REVIEW_ROLES, charactersPrompt, nameCritiquePrompt,
   panelsPrompt, panelsRevisePrompt, structurePrompt,
 } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
+import { listBackgrounds } from './visual.js';
 
 // ---------- 取得ヘルパ ----------
 
@@ -109,7 +111,7 @@ export async function generateCharacters(projectId: number): Promise<Character[]
 interface PanelsOutput {
   panels: {
     layout: PanelLayout; description: string; dialogues: Dialogue[];
-    imagePrompt: string; characters: string[];
+    imagePrompt: string; characters: string[]; background?: string | null;
   }[];
 }
 
@@ -120,10 +122,11 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
   const project = getProject(episode.projectId);
   const characters = listCharacters(episode.projectId);
   const llm = getLLMClient();
+  const backgrounds = listBackgrounds(episode.projectId);
 
   const text = await llm.complete({
     task: 'panels',
-    prompt: panelsPrompt(project, episode, characters),
+    prompt: panelsPrompt(project, episode, characters, backgrounds),
   });
   let out = extractJson<PanelsOutput>(text);
 
@@ -137,17 +140,20 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
   // 再生成時は既存パネルを置き換える
   db.prepare('DELETE FROM panels WHERE episode_id = ?').run(episodeId);
   const insert = db.prepare(
-    `INSERT INTO panels (episode_id, idx, layout, description, dialogues, image_prompt, character_ids, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')`,
+    `INSERT INTO panels (episode_id, idx, layout, description, dialogues, image_prompt, character_ids, background_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
   );
   (out.panels ?? []).forEach((p, i) => {
     const charIds = (p.characters ?? [])
       .map((name) => characters.find((c) => c.name === name)?.id)
       .filter((id): id is number => id !== undefined);
+    const backgroundId = p.background
+      ? backgrounds.find((b) => b.name === p.background)?.id ?? null
+      : null;
     insert.run(
       episodeId, i, JSON.stringify(p.layout ?? { page: 1, x: 0, y: 0, w: 4, h: 2 }),
       p.description ?? '', JSON.stringify(p.dialogues ?? []),
-      p.imagePrompt ?? '', JSON.stringify(charIds),
+      p.imagePrompt ?? '', JSON.stringify(charIds), backgroundId,
     );
   });
   db.prepare("UPDATE episodes SET status = 'paneled' WHERE id = ?").run(episodeId);
@@ -240,6 +246,10 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
   const style = styleRow ? rowToArtStyle(styleRow as any) : null;
 
   const panelChars = listCharacters(episode.projectId).filter((c) => panel.characterIds.includes(c.id));
+  // 背景も一貫性アセットとして扱う（同じ場所を毎回同じ構造で描くため）
+  const background = panel.backgroundId
+    ? listBackgrounds(episode.projectId).find((b) => b.id === panel.backgroundId) ?? null
+    : null;
 
   db.prepare("UPDATE panels SET status = 'generating' WHERE id = ?").run(panelId);
   try {
@@ -250,9 +260,14 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
       characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),
       referenceImageUrls: panelChars.map((c) => c.refImageUrl).filter((u): u is string => !!u),
       aspectRatio: panelAspectRatio(panel, project),
+      // 背景はキャラとは別枠で渡す。混ぜると「キャラLoRAがあると背景LoRAが黙って落ちる」ため
+      backgroundLoraUrl: background?.loraUrl ?? null,
+      backgroundRefImageUrl: background?.refImageUrl ?? null,
       extraInput: style?.extraInput,
     });
-    db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(result.url, panelId);
+    // Replicate の出力URLは失効するため、ローカルへ保存して配信URLに差し替える
+    const url = await persistImage(result.url, `panel-${panelId}`);
+    db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(url, panelId);
   } catch (e) {
     db.prepare("UPDATE panels SET status = 'error' WHERE id = ?").run(panelId);
     throw e;
@@ -278,12 +293,43 @@ function panelAspectRatio(panel: Panel, project: Project): string {
   return best[0];
 }
 
-/** エピソード内の全パネルを順次作画（レート制限に配慮して直列実行） */
-export async function generateEpisodeImages(episodeId: number): Promise<Panel[]> {
+/**
+ * エピソード内の全パネルを順次作画（レート制限に配慮して直列実行）。
+ * onProgress を渡すとコマ1件ごとに進捗を通知する（ジョブの進捗表示用）。
+ */
+export async function generateEpisodeImages(
+  episodeId: number,
+  onProgress?: (done: number, total: number, label: string) => void,
+): Promise<Panel[]> {
   const panels = listPanels(episodeId);
-  for (const p of panels) {
-    if (p.status === 'done') continue;
-    await generatePanelImage(p.id);
+  const pending = panels.filter((p) => p.status !== 'done');
+  let done = 0;
+  const failed: string[] = [];
+  for (const p of pending) {
+    const label = `P${p.layout.page}-${p.index + 1}`;
+    // Replicate 側の一時エラー（Upstream provider is unavailable 等）があるため、
+    // コマ単位でリトライし、それでも駄目なら残りのコマは続行して最後にまとめて報告する
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await generatePanelImage(p.id);
+        break;
+      } catch (e) {
+        if (attempt >= MAX_ATTEMPTS) {
+          console.warn(`[image] ${label} は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
+          failed.push(label);
+          break;
+        }
+        console.warn(`[image] ${label} の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
+    done += 1;
+    onProgress?.(done, pending.length, label);
+  }
+  if (failed.length > 0) {
+    // ジョブは失敗として報告するが、成功したコマは保存済み。再実行すれば失敗分だけ再作画される
+    throw new Error(`${failed.length} コマの作画に失敗しました: ${failed.join(', ')}（再実行で失敗分のみ再作画されます）`);
   }
   db.prepare("UPDATE episodes SET status = 'rendered' WHERE id = ?").run(episodeId);
   return listPanels(episodeId);

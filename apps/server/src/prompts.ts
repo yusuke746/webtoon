@@ -1,4 +1,6 @@
-import type { Character, Episode, Foreshadowing, PanelRules, Project, StoryTemplate } from '@manga/shared';
+import type {
+  Background, Character, Episode, Foreshadowing, PanelRules, Project, StoryTemplate,
+} from '@manga/shared';
 
 /** Claude へ渡すプロンプトのテンプレート集。すべて JSON 出力を強制する */
 
@@ -100,8 +102,14 @@ export function panelsPrompt(
   project: Project,
   episode: Episode,
   characters: Character[],
+  backgrounds: Background[] = [],
 ): string {
   const rules: PanelRules = project.panelRules;
+  const bgSection = backgrounds.length
+    ? `\n## 登録済みの背景（同じ場所は必ず同じ名前を使うこと。一貫性維持に使われる）\n${backgrounds
+        .map((b) => `- ${b.name}: ${b.description}`)
+        .join('\n')}\n`
+    : '';
   return `あなたはプロの漫画家です。以下の話のコマ割り（ネーム）を作ってください。
 
 ## 作品あらすじ
@@ -114,7 +122,7 @@ ${episode.scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.summary}（登場: ${s
 
 ## キャラクター設定（セリフの口調・外見描写に反映すること）
 ${characters.map((c) => `- ${c.name}（${c.role}）: 外見=${c.appearance} / 性格=${c.personality}`).join('\n')}
-
+${bgSection}
 ${panelRulesSection(project)}
 
 ## 依頼
@@ -151,7 +159,8 @@ const PANELS_OUTPUT_FORMAT = `## 出力形式（JSON）
       "description": "情景・構図の日本語説明",
       "dialogues": [{"speaker": "話者名", "text": "セリフ", "kind": "speech|thought|narration|sfx", "position": "top-right"}],
       "imagePrompt": "english prompt for image generation",
-      "characters": ["このコマに登場するキャラ名"]
+      "characters": ["このコマに登場するキャラ名"],
+      "background": "登録済み背景の名前。該当なしなら null"
     }
   ]
 }
@@ -313,6 +322,56 @@ ${JSON.stringify(
 ## 依頼
 変更指示を反映した episodes / foreshadowings の全量を、入力と同じ形式の JSON で出力してください。
 変更が不要な要素もそのまま含めてください（差分ではなく全量）。
+${JSON_ONLY}`;
+}
+
+/**
+ * 参照画像（一貫性アセット）用の英語プロンプトを Claude に作らせる。
+ *
+ * 日本語の外見description をそのまま画像モデルへ渡すと精度が落ちるため、
+ * 一度英語のプロンプトへ翻訳・具体化させる。
+ * キャラは「設定画（キャラクターシート）」、背景は「無人の情景」を狙う。
+ */
+export function refImagePrompt(
+  kind: 'character' | 'background' | 'style',
+  name: string,
+  description: string,
+  stylePrompt: string,
+): string {
+  const intent = {
+    character:
+      'キャラクター設定画（character reference sheet）。同一人物を毎回同じ顔・同じ服装で描くための基準画像。'
+      + '正面と横からの全身が入り、背景は無地、表情はニュートラル。他の人物は写り込ませないこと。',
+    background:
+      '背景の基準画像（establishing shot）。同じ場所を毎回同じ構造・同じ内装で描くための基準画像。'
+      + '人物は一切登場させず、空間そのものが分かる引きの構図にすること。',
+    style:
+      '画風の基準画像（style reference）。線の太さ・トーン・陰影の付け方が分かる代表的な一枚。',
+  }[kind];
+
+  return `あなたは漫画の作画監督です。以下の設定から、画像生成モデル（Flux / SDXL 系）へ渡す英語プロンプトを1つ作ってください。
+
+## 目的
+${intent}
+
+## 対象の名前
+${name}
+
+## 設定（日本語）
+${description || '（詳細な設定なし。名前から妥当に補完すること）'}
+
+## 画風指定
+${stylePrompt || '（指定なし。日本の漫画・白黒の線画を基本とする）'}
+
+## 制約
+- 出力は英語のプロンプト文字列のみ（カンマ区切りのタグ列でよい）
+- 日本語や説明文をプロンプトに混ぜないこと
+- 人物の年齢が読み取れる場合は必ず明示すること
+- 200語以内
+
+## 出力JSON
+{"prompt": "英語のプロンプト"}
+
 ${JSON_ONLY}`;
 }
 

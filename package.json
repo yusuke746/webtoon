@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web -c blue,green \"npm run dev --workspace apps/server\" \"npm run dev --workspace apps/web\"",
+    "dev": "concurrently -k --kill-others-on-fail -n server,web -c blue,green \"npm run dev --workspace apps/server\" \"npm run dev --workspace apps/web\"",
     "dev:server": "npm run dev --workspace apps/server",
     "dev:web": "npm run dev --workspace apps/web",
     "seed": "npm run seed --workspace apps/server",
