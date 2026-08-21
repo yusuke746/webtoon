@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { ArtStyle, Character, Project, Worldview } from '@manga/shared';
-import { api } from '../api';
+import type { ArtStyle, Background, Character, Project, Worldview } from '@manga/shared';
+import { api, type AssetType } from '../api';
 import { useAction, useFetch } from '../hooks';
-
-type AssetType = 'character' | 'worldview' | 'art_style';
 
 /** アセットライブラリ: 作品横断で再利用できるキャラ・世界観・画風（拡張4） */
 export function AssetsPage() {
   const { data: characters } = useFetch(() => api.listAssets<Character>('character'));
   const { data: worldviews } = useFetch(() => api.listAssets<Worldview>('worldview'));
   const { data: artStyles } = useFetch(() => api.listAssets<ArtStyle>('art_style'));
+  const { data: backgrounds } = useFetch(() => api.listAssets<Background>('background'));
   const { data: projects } = useFetch(() => api.listProjects());
   const { busy, error, run } = useAction();
   const [castTarget, setCastTarget] = useState<Record<string, number>>({});
@@ -38,26 +37,54 @@ export function AssetsPage() {
 
   return (
     <div>
-      <h1>アセットライブラリ</h1>
+      <div className="page-head">
+        <h1>アセットライブラリ</h1>
+        <p className="lead">
+          各作品で「ライブラリへ保存」したキャラクター・背景・世界観・画風がここに集まります。
+          参照画像やLoRAも一緒に引き継がれるので、別作品でも同じ絵柄・同じ顔で描けます。
+        </p>
+      </div>
       {error && <div className="error-box">{error}</div>}
-      <p className="muted">
-        各作品のページで「ライブラリへ保存」したキャラクター・世界観・画風がここに集まります。
-        別の作品へ「キャスティング」して使い回せます。
-      </p>
 
       <h2>キャラクター</h2>
       {characters?.map((c) => (
         <div className="card" key={c.id}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <div>
-              <strong>{c.name}</strong> <span className="badge">{c.role || '役割未設定'}</span>
-              <div className="muted">{c.appearance}</div>
+          <div className="row between" style={{ alignItems: 'flex-start' }}>
+            <div className="asset-tile">
+              {c.refImageUrl
+                ? <img className="asset-thumb" src={c.refImageUrl} alt={c.name} loading="lazy" />
+                : <div className="asset-thumb placeholder">参照画像なし</div>}
+              <div>
+                <strong>{c.name}</strong> <span className="badge">{c.role || '役割未設定'}</span>
+                {c.loraUrl && <span className="badge ok" style={{ marginLeft: 4 }}>LoRAあり</span>}
+                <div className="muted">{c.appearance}</div>
+              </div>
             </div>
             <CastControl type="character" assetId={c.id} />
           </div>
         </div>
       ))}
       {characters?.length === 0 && <p className="muted">保存済みキャラクターはありません。</p>}
+
+      <h2>背景・ロケーション</h2>
+      {backgrounds?.map((b) => (
+        <div className="card" key={b.id}>
+          <div className="row between" style={{ alignItems: 'flex-start' }}>
+            <div className="asset-tile">
+              {b.refImageUrl
+                ? <img className="asset-thumb wide" src={b.refImageUrl} alt={b.name} loading="lazy" />
+                : <div className="asset-thumb wide placeholder">参照画像なし</div>}
+              <div>
+                <strong>{b.name}</strong>
+                {b.loraUrl && <span className="badge ok" style={{ marginLeft: 4 }}>LoRAあり</span>}
+                <div className="muted">{b.description}</div>
+              </div>
+            </div>
+            <CastControl type="background" assetId={b.id} />
+          </div>
+        </div>
+      ))}
+      {backgrounds?.length === 0 && <p className="muted">保存済み背景はありません。</p>}
 
       <h2>世界観</h2>
       {worldviews?.map((w) => (

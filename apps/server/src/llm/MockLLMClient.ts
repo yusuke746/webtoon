@@ -75,36 +75,47 @@ export class MockLLMClient implements LLMClient {
             {
               layout: { page: 1, x: 0, y: 0, w: 4, h: 2 },
               description: '朝の街並みの俯瞰。通学路を歩く主人公。',
-              dialogues: [{ speaker: 'ナレーション', text: 'いつもと同じ朝のはずだった。', kind: 'narration' }],
+              dialogues: [{ speaker: 'ナレーション', text: 'いつもと同じ朝のはずだった。', kind: 'narration', position: 'top-right' }],
               imagePrompt: 'manga panel, wide establishing shot of a japanese town in the morning, a boy walking to school',
               characters: ['主人公'],
+              background: '通学路',
             },
             {
               layout: { page: 1, x: 0, y: 2, w: 2, h: 2 },
               description: '路地裏を覗き込む主人公のアップ。',
-              dialogues: [{ speaker: '主人公', text: '…誰かいるのか?', kind: 'speech' }],
+              dialogues: [{ speaker: '主人公', text: '…誰かいるのか?', kind: 'speech', position: 'top-right' }],
               imagePrompt: 'manga panel, close-up of a boy peering into a dark alley, surprised expression',
               characters: ['主人公'],
+              background: '路地裏',
             },
             {
               layout: { page: 1, x: 2, y: 2, w: 2, h: 2 },
               description: '倒れている銀髪の少女。ペンダントが光る。',
-              dialogues: [{ speaker: '主人公', text: 'おい、大丈夫か!?', kind: 'speech' }],
+              dialogues: [{ speaker: '主人公', text: 'おい、大丈夫か!?', kind: 'speech', position: 'top-left' }],
               imagePrompt: 'manga panel, a silver-haired girl collapsed in an alley, a glowing pendant on her chest',
               characters: ['主人公', '少女'],
+              background: '路地裏',
             },
             {
               layout: { page: 1, x: 0, y: 4, w: 4, h: 2 },
               description: '少女が目を開く。瞳に主人公が映る。',
               dialogues: [
-                { speaker: '少女', text: '…みつけた', kind: 'speech' },
-                { speaker: '主人公', text: '(なんだ、この感覚…)', kind: 'thought' },
+                { speaker: '少女', text: '…みつけた', kind: 'speech', position: 'top-right' },
+                { speaker: '主人公', text: '(なんだ、この感覚…)', kind: 'thought', position: 'bottom-left' },
               ],
               imagePrompt: 'manga panel, extreme close-up of a girl opening her eyes, a boy reflected in her iris, dramatic',
               characters: ['主人公', '少女'],
             },
           ],
         });
+
+      case 'name_critique': {
+        const critic = req.system ?? '';
+        if (critic.includes('読者')) {
+          return '1ページ目の3コマ目、セリフ「おい、大丈夫か!?」の吹き出しが少女の顔に被りそうです。position を bottom-left に移すか、コマを縦に広げてください。ほかは読み順に迷いはありません。';
+        }
+        return 'P1-4 の大ゴマは良い見せ場ですが、直前の2コマが同サイズで単調です。P1-2 を横長の小ゴマにしてテンポを作り、P1-4 とのメリハリを強調してください。吹き出しの position 重複はありません。';
+      }
 
       case 'discussion': {
         const role = req.system ?? '';
@@ -128,6 +139,14 @@ export class MockLLMClient implements LLMClient {
         return JSON.stringify({
           applied: true,
           note: '変更指示を構成データに反映しました（モック）。',
+        });
+
+      case 'ref_image':
+        return JSON.stringify({
+          prompt:
+            'character reference sheet, front view and side view, full body, ' +
+            'a silver-haired girl in a white dress with an antique pendant, ' +
+            'neutral gray background, consistent design, clean lineart',
         });
 
       case 'summarize':
