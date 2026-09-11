@@ -3,8 +3,8 @@ import { api } from '../api';
 import { useAction, useFetch, useJobTracker } from '../hooks';
 import { WorkflowStepper } from '../components/WorkflowStepper';
 import { JobStrip } from '../components/JobProgress';
-import { PageViewer } from '../components/PageViewer';
-import { SkeletonPage } from './EpisodeScenesPage';
+import { FallbackImage, PageViewer } from '../components/PageViewer';
+import { LoadErrorPage, SkeletonPage } from '../components/PageState';
 
 const PANEL_STATUS = {
   draft: { label: '未作画', cls: 'neutral' },
@@ -18,7 +18,7 @@ export function EpisodeArtPage() {
   const projectId = Number(useParams().projectId);
   const episodeId = Number(useParams().episodeId);
   const { data: project } = useFetch(() => api.getProject(projectId), [projectId]);
-  const { data: episode, reload } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
+  const { data: episode, reload, error: loadError } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
   const { data: characters } = useFetch(() => api.listCharacters(projectId), [projectId]);
   const { data: health } = useFetch(() => api.health(), []);
   const { busy, error, run } = useAction();
@@ -26,6 +26,10 @@ export function EpisodeArtPage() {
   // 一括作画は1コマごとに進むので、進捗のたびに画面も更新する
   const tracker = useJobTracker({ onTick: () => reload(), onDone: () => reload() });
 
+  if (loadError) {
+    return <LoadErrorPage message={`この話を読み込めませんでした（${loadError}）。`}
+      backTo={`/projects/${projectId}/episodes`} backLabel="← エピソード選択へ戻る" />;
+  }
   if (!episode || !project) return <SkeletonPage />;
 
   const panels = episode.panels;
@@ -102,7 +106,7 @@ export function EpisodeArtPage() {
             <div className="panel-card" key={p.id}>
               <div className="thumb">
                 {p.imageUrl
-                  ? <img src={p.imageUrl} alt={`P${p.layout.page}-${p.index + 1}`} loading="lazy" />
+                  ? <FallbackImage src={p.imageUrl} alt={`P${p.layout.page}-${p.index + 1}`} loading="lazy" />
                   : <span>未作画</span>}
               </div>
               <div className="meta">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Character } from '@manga/shared';
 import { api } from '../api';
@@ -18,11 +18,60 @@ export function CharactersPage() {
   const [editing, setEditing] = useState<Character | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [tab, setTab] = useState<'ref' | 'lora'>('ref');
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // フォームは対象カードの直下（新規は一覧の先頭）に出す。画面外なら見える位置までスクロールする
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [editing?.id]);
 
   const blank: Character = {
     id: 0, projectId, name: '', role: '', appearance: '', personality: '',
     refImageUrl: null, loraUrl: null, sourceAssetId: null, createdAt: '',
   };
+
+  /** 編集/新規フォーム。呼び出し位置でカード直下 or 一覧先頭に描画する */
+  const renderForm = () => editing && (
+    <div ref={formRef} className="card accent">
+      <h3>{editing.id ? `「${editing.name}」を編集` : '新規キャラクター'}</h3>
+      <div className="grid2">
+        <div>
+          <label>名前</label>
+          <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+          <label>役割</label>
+          <input value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value })} />
+          <label>参照画像URL <span className="hint">／ ビジュアル工房から生成できます</span></label>
+          <input value={editing.refImageUrl ?? ''}
+            onChange={(e) => setEditing({ ...editing, refImageUrl: e.target.value || null })} />
+          <label>LoRA URL <span className="hint">／ ビジュアル工房で学習できます</span></label>
+          <input value={editing.loraUrl ?? ''}
+            onChange={(e) => setEditing({ ...editing, loraUrl: e.target.value || null })} />
+        </div>
+        <div>
+          <label>外見 <span className="hint">／ 参照画像の生成プロンプトの元になります</span></label>
+          <textarea rows={5} value={editing.appearance}
+            onChange={(e) => setEditing({ ...editing, appearance: e.target.value })} />
+          <label>性格・口調</label>
+          <textarea rows={4} value={editing.personality}
+            onChange={(e) => setEditing({ ...editing, personality: e.target.value })} />
+        </div>
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button className="primary" disabled={!editing.name.trim()}
+          onClick={() => run('キャラクターの保存', async () => {
+            if (editing.id) await api.updateCharacter(editing.id, editing);
+            else await api.createCharacter(projectId, editing);
+            setEditing(null);
+            reload();
+          })}
+        >
+          保存
+        </button>
+        <button className="ghost" onClick={() => setEditing(null)}>キャンセル</button>
+      </div>
+    </div>
+  
+  );
 
   return (
     <div>
@@ -48,6 +97,8 @@ export function CharactersPage() {
         <button onClick={() => setEditing(blank)}>手動で追加</button>
       </div>
 
+      {editing && !editing.id && renderForm()}
+
       {!characters?.length && (
         <div className="empty-state">
           <div className="big">👤</div>
@@ -57,7 +108,8 @@ export function CharactersPage() {
       )}
 
       {characters?.map((c) => (
-        <div className="card" key={c.id}>
+        <div key={c.id}>
+        <div className="card">
           <div className="row between" style={{ alignItems: 'flex-start' }}>
             <div className="asset-tile">
               {c.refImageUrl
@@ -76,7 +128,7 @@ export function CharactersPage() {
                 )}
               </div>
             </div>
-            <div className="row tight">
+            <div className="row tight actions">
               <button className="primary sm"
                 onClick={() => { setOpenId(openId === c.id ? null : c.id); setTab('ref'); }}>
                 {openId === c.id ? '閉じる' : 'ビジュアル工房'}
@@ -119,48 +171,10 @@ export function CharactersPage() {
             </div>
           )}
         </div>
+        {editing?.id === c.id && renderForm()}
+        </div>
       ))}
 
-      {editing && (
-        <div className="card accent">
-          <h3>{editing.id ? `「${editing.name}」を編集` : '新規キャラクター'}</h3>
-          <div className="grid2">
-            <div>
-              <label>名前</label>
-              <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
-              <label>役割</label>
-              <input value={editing.role} onChange={(e) => setEditing({ ...editing, role: e.target.value })} />
-              <label>参照画像URL <span className="hint">／ ビジュアル工房から生成できます</span></label>
-              <input value={editing.refImageUrl ?? ''}
-                onChange={(e) => setEditing({ ...editing, refImageUrl: e.target.value || null })} />
-              <label>LoRA URL <span className="hint">／ ビジュアル工房で学習できます</span></label>
-              <input value={editing.loraUrl ?? ''}
-                onChange={(e) => setEditing({ ...editing, loraUrl: e.target.value || null })} />
-            </div>
-            <div>
-              <label>外見 <span className="hint">／ 参照画像の生成プロンプトの元になります</span></label>
-              <textarea rows={5} value={editing.appearance}
-                onChange={(e) => setEditing({ ...editing, appearance: e.target.value })} />
-              <label>性格・口調</label>
-              <textarea rows={4} value={editing.personality}
-                onChange={(e) => setEditing({ ...editing, personality: e.target.value })} />
-            </div>
-          </div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <button className="primary" disabled={!editing.name.trim()}
-              onClick={() => run('キャラクターの保存', async () => {
-                if (editing.id) await api.updateCharacter(editing.id, editing);
-                else await api.createCharacter(projectId, editing);
-                setEditing(null);
-                reload();
-              })}
-            >
-              保存
-            </button>
-            <button className="ghost" onClick={() => setEditing(null)}>キャンセル</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

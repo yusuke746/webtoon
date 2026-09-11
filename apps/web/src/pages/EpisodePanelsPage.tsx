@@ -6,7 +6,7 @@ import { useAction, useFetch } from '../hooks';
 import { WorkflowStepper } from '../components/WorkflowStepper';
 import { BusyOverlay } from '../components/JobProgress';
 import { PageViewer } from '../components/PageViewer';
-import { SkeletonPage } from './EpisodeScenesPage';
+import { LoadErrorPage, SkeletonPage } from '../components/PageState';
 
 /** 制作フロー STEP3: ネーム（コマ割り・セリフ）の確認と手動編集 */
 export function EpisodePanelsPage() {
@@ -14,12 +14,16 @@ export function EpisodePanelsPage() {
   const episodeId = Number(useParams().episodeId);
   const navigate = useNavigate();
   const { data: project } = useFetch(() => api.getProject(projectId), [projectId]);
-  const { data: episode, reload } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
+  const { data: episode, reload, error: loadError } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
   const { data: characters } = useFetch(() => api.listCharacters(projectId), [projectId]);
   const { data: backgrounds } = useFetch(() => api.listBackgrounds(projectId), [projectId]);
   const { busy, error, run } = useAction();
   const [editing, setEditing] = useState<Panel | null>(null);
 
+  if (loadError) {
+    return <LoadErrorPage message={`この話を読み込めませんでした（${loadError}）。`}
+      backTo={`/projects/${projectId}/episodes`} backLabel="← エピソード選択へ戻る" />;
+  }
   if (!episode || !project) return <SkeletonPage />;
 
   return (
