@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Foreshadowing } from '@manga/shared';
 import { api } from '../api';
@@ -17,6 +17,12 @@ export function ForeshadowPage() {
   const { data: warnings, reload: reloadWarnings } = useFetch(() => api.foreshadowWarnings(projectId), [projectId]);
   const { busy, error, run } = useAction();
   const [editing, setEditing] = useState<Foreshadowing | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // 編集フォームは一覧の下に出るため、開いたら見える位置までスクロールする
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [editing?.id]);
 
   const reloadAll = () => { reload(); reloadWarnings(); };
 
@@ -74,9 +80,9 @@ export function ForeshadowPage() {
                   {STATUS_LABEL[f.status]}
                 </span>
               </td>
-              <td>{f.setupEpisode ? `第${f.setupEpisode}話` : '—'}</td>
-              <td>{f.plannedPayoffEpisode ? `第${f.plannedPayoffEpisode}話` : '未定'}</td>
-              <td>{f.resolvedEpisode ? `第${f.resolvedEpisode}話` : '—'}</td>
+              <td className="nowrap">{f.setupEpisode ? `第${f.setupEpisode}話` : '—'}</td>
+              <td className="nowrap">{f.plannedPayoffEpisode ? `第${f.plannedPayoffEpisode}話` : '未定'}</td>
+              <td className="nowrap">{f.resolvedEpisode ? `第${f.resolvedEpisode}話` : '—'}</td>
               <td className="muted">
                 {[...f.relatedCharacters, ...f.relatedItems].join('、') || '—'}
               </td>
@@ -100,7 +106,7 @@ export function ForeshadowPage() {
       {items && items.length === 0 && <p className="muted">伏線はまだありません。構成生成時に自動で登録されます。</p>}
 
       {editing && (
-        <div className="card" style={{ borderColor: 'var(--accent)', marginTop: 14 }}>
+        <div ref={formRef} className="card accent" style={{ marginTop: 14 }}>
           <h3>{editing.id ? `「${editing.title}」を編集` : '新規伏線'}</h3>
           <label>タイトル</label>
           <input value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />

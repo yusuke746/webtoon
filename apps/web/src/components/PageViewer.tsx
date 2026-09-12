@@ -1,4 +1,22 @@
+import { useEffect, useState } from 'react';
 import type { BubblePosition, Dialogue, Panel, PanelRules } from '@manga/shared';
+
+/**
+ * 読み込みに失敗した画像を alt テキストのまま放置せず、fallback（未指定なら「画像を読み込めません」）に差し替える img。
+ * 期限切れ URL やオフライン時に、説明文が吹き出しへ重なるのを防ぐ。
+ */
+export function FallbackImage({ src, alt, fallback, ...rest }: {
+  src: string;
+  alt: string;
+  fallback?: React.ReactNode;
+} & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'alt'>) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
+  if (failed) {
+    return <div className="img-fallback">{fallback ?? '画像を読み込めません'}</div>;
+  }
+  return <img src={src} alt={alt} onError={() => setFailed(true)} {...rest} />;
+}
 
 /**
  * コマ割りレイアウトをページ単位でレンダリングするビューア。
@@ -96,7 +114,17 @@ function PanelContent({ panel, rules }: { panel: Panel; rules: PanelRules }) {
   return (
     <>
       {panel.imageUrl
-        ? <img src={panel.imageUrl} alt={panel.description} />
+        ? (
+          <FallbackImage
+            src={panel.imageUrl}
+            alt={panel.description}
+            fallback={(
+              <div className="desc">
+                <span>{panel.description || '(未作画)'}<br /><small>（画像を読み込めません）</small></span>
+              </div>
+            )}
+          />
+        )
         : <div className="desc">{panel.description || '(未作画)'}</div>}
       {[...groups.entries()].map(([pos, dialogues]) => {
         const [v, h] = pos.split('-') as ['top' | 'middle' | 'bottom', 'left' | 'right'];

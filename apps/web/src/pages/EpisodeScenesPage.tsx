@@ -5,16 +5,21 @@ import { api } from '../api';
 import { useAction, useFetch } from '../hooks';
 import { WorkflowStepper } from '../components/WorkflowStepper';
 import { BusyOverlay } from '../components/JobProgress';
+import { LoadErrorPage, SkeletonPage } from '../components/PageState';
 
 /** 制作フロー STEP2: シーン構成の確認・編集 → ネーム生成へ */
 export function EpisodeScenesPage() {
   const projectId = Number(useParams().projectId);
   const episodeId = Number(useParams().episodeId);
   const navigate = useNavigate();
-  const { data: episode, reload } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
+  const { data: episode, reload, error: loadError } = useFetch(() => api.getEpisode(episodeId), [episodeId]);
   const { busy, error, run } = useAction();
   const [draft, setDraft] = useState<Scene[] | null>(null);
 
+  if (loadError) {
+    return <LoadErrorPage message={`この話を読み込めませんでした（${loadError}）。`}
+      backTo={`/projects/${projectId}/episodes`} backLabel="← エピソード選択へ戻る" />;
+  }
   if (!episode) return <SkeletonPage />;
 
   const scenes = draft ?? episode.scenes;
@@ -109,12 +114,3 @@ export function EpisodeScenesPage() {
   );
 }
 
-export function SkeletonPage() {
-  return (
-    <div>
-      <div className="skeleton" style={{ height: 28, width: 260, marginBottom: 14 }} />
-      <div className="skeleton" style={{ height: 62, marginBottom: 18 }} />
-      <div className="skeleton" style={{ height: 180 }} />
-    </div>
-  );
-}

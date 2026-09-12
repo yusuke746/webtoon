@@ -96,7 +96,7 @@ export function BackgroundsPage() {
                 <div className="muted" style={{ marginTop: 4 }}>{b.description || '説明未設定'}</div>
               </div>
             </div>
-            <div className="row tight">
+            <div className="row tight actions">
               <button className="sm" onClick={() => { setOpenId(openId === b.id ? null : b.id); setTab('ref'); }}>
                 {openId === b.id ? '閉じる' : 'ビジュアル工房'}
               </button>
