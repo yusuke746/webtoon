@@ -7,12 +7,14 @@
     "seed": "tsx src/seed.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
+    "test": "tsx --test src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@manga/shared": "*",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "jsonrepair": "^3.15.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

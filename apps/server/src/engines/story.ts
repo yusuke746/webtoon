@@ -232,6 +232,14 @@ export function listPanels(episodeId: number): Panel[] {
 
 // ---------- 作画（画像生成） ----------
 
+export function buildPanelImagePrompt(stylePrompt: string | undefined, imagePrompt: string): string {
+  return [
+    stylePrompt,
+    imagePrompt,
+    'clean illustration only, no text, no letters, no words, no speech bubbles, no dialogue balloons, no captions, no sound effects, no logos, no watermarks, leave clear negative space around the edges for dialogue overlays',
+  ].filter(Boolean).join(', ');
+}
+
 export async function generatePanelImage(panelId: number): Promise<Panel> {
   const row = db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId);
   if (!row) throw new Error(`パネルが見つかりません: ${panelId}`);
@@ -254,7 +262,7 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
   db.prepare("UPDATE panels SET status = 'generating' WHERE id = ?").run(panelId);
   try {
     const result = await getImageClient().generate({
-      prompt: [style?.stylePrompt, panel.imagePrompt].filter(Boolean).join(', '),
+      prompt: buildPanelImagePrompt(style?.stylePrompt, panel.imagePrompt),
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',
       styleLoraUrl: style?.loraUrl,
       characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),

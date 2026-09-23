@@ -127,6 +127,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `LLM_CLIENT`                 | `claude`                         | `claude`（CLI サブプロセス） / `mock`（開発用）                       |
 | `CLAUDE_CLI_PATH`            | `claude`                         | Claude CLI のパス                                                         |
 | `CLAUDE_CLI_MODEL`           | (CLI 既定)                         | `--model` に渡すモデル名                                                |
+| `CLAUDE_CLI_EFFORT`          | `low`                            | CLI の推論量 (`low` / `medium` / `high`)                                |
 | `LLM_TIMEOUT_MS`             | `300000`                         | CLI 呼び出しのタイムアウト                                                |
 | `DISCUSSION_ROUNDS`          | `2`                              | AI議論のラウンド数                                                        |
 | `IMAGE_CLIENT`               | 自動                               | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |

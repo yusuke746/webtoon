@@ -1,3 +1,5 @@
+import { jsonrepair } from 'jsonrepair';
+
 /**
  * LLM 呼び出しの抽象化層。
  * 現在は Claude CLI（サブプロセス）実装がデフォルト。将来 API 直叩き等へ差し替え可能。
@@ -49,7 +51,21 @@ export function extractJson<T>(text: string): T {
     else if (ch === opener) depth++;
     else if (ch === closer) {
       depth--;
-      if (depth === 0) return JSON.parse(candidate.slice(start, i + 1)) as T;
+      if (depth === 0) {
+        const json = candidate.slice(start, i + 1);
+        try {
+          return JSON.parse(json) as T;
+        } catch (parseError) {
+          try {
+            return JSON.parse(jsonrepair(json)) as T;
+          } catch {
+            throw new Error(
+              `LLM出力のJSONを解析できません: ${(parseError as Error).message}\n出力: ${json.slice(0, 500)}`,
+              { cause: parseError },
+            );
+          }
+        }
+      }
     }
   }
   throw new Error(`LLM出力のJSONが閉じていません: ${candidate.slice(start, start + 200)}`);

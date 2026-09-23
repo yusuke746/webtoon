@@ -8,16 +8,23 @@ import type { LLMClient, LLMRequest } from './LLMClient.js';
  * 環境変数:
  *   CLAUDE_CLI_PATH   … CLI のパス（デフォルト: "claude"）
  *   CLAUDE_CLI_MODEL  … モデル指定（省略時は CLI のデフォルト）
+ *   CLAUDE_CLI_EFFORT … 推論量（デフォルト: "low"）
  *   LLM_TIMEOUT_MS    … タイムアウト（デフォルト: 300000 = 5分）
  */
 export class ClaudeCliClient implements LLMClient {
   readonly name = 'claude-cli';
   private cliPath = process.env.CLAUDE_CLI_PATH ?? 'claude';
   private model = process.env.CLAUDE_CLI_MODEL;
+  private effort = process.env.CLAUDE_CLI_EFFORT ?? 'low';
   private timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 300_000);
 
   async complete(req: LLMRequest): Promise<string> {
-    const args = ['-p', '--output-format', 'json'];
+    const args = [
+      '-p', '--output-format', 'json',
+      '--restricted', '--strict-mcp-config', '--tools', '',
+      '--max-turns', '1', '--permission-prompts', 'none',
+      '--effort', this.effort,
+    ];
     if (this.model) args.push('--model', this.model);
     if (req.system) args.push('--append-system-prompt', req.system);
 
