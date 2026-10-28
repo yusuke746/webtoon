@@ -53,7 +53,10 @@ data/series/<id>-<作品名>/
 設定担当（Claude）が候補を見比べて設定に最も近い1枚を選んで持ってくる。編集は「おすすめを採用」か「別の候補を見る」。
 採用すると、その1枚から **正面・横顔・全身・表情** の4枚セットを派生させ（`DESIGN_VIEWS=0` で無効）、作画の参照と作画チェックの比較対象にする。
 設定画がないキャラが出る話で作画に入ろうとすると、漫画家が「先に設定画を」と言う（設定画なしで描くことも選べる）。
-API: `POST /api/projects/:id/jobs/design`, `GET /api/projects/:id/design`, `POST /api/characters/:id/design/adopt`
+
+背景も同じ流れ。2F のロケハン担当に「構成とネームから場所を拾い出してもらう」と、繰り返し出てくる場所を背景として登録する。
+続けて「設定画のない N 件の背景の設定画を作ってもらう」→ 候補を見比べておすすめ → 採用で **引き・入口から・細部・夜** の4枚セットを派生。
+API: `POST /api/projects/:id/jobs/design {kind}`, `GET /api/projects/:id/design?kind=`, `POST /api/design/adopt`, `POST /api/projects/:id/jobs/locations`
 
 修正指示は自然言語で、サーバーの `jobs/revise-scenes`（シーン構成の書き直し）と `jobs/panels`（指示付きのネーム改稿）へ渡る。
 従来のページは「書類で見る」から開ける補助に下げた（URL は従来のまま）。

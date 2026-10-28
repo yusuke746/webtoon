@@ -193,6 +193,14 @@ export class MockLLMClient implements LLMClient {
         return JSON.stringify({ prompt: `${name}, 16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)` });
       }
 
+      case 'locations':
+        return JSON.stringify({
+          locations: [
+            { name: '路地裏', description: '商店街の裏手にある細い路地。湿った石畳、積まれた木箱、壁の落書き。昼でも薄暗く、夜は街灯が一本だけ。' },
+            { name: '主人公の自室', description: '六畳の和室。窓際に学習机、壁に本棚、床に布団。夜はスタンドライトだけが点いている。' },
+          ],
+        });
+
       case 'art_pick': {
         const ids = [...req.prompt.matchAll(/id=(\d+)/g)].map((m) => Number(m[1]));
         return JSON.stringify({

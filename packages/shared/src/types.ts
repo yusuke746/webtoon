@@ -265,9 +265,12 @@ export interface RefImage {
   createdAt: string;
 }
 
-/** 設定画の提案（キャラごと） */
+export type DesignKind = 'character' | 'background';
+
+/** 設定画の提案（キャラ・背景ごと） */
 export interface DesignProposal {
-  character: Character;
+  kind: DesignKind;
+  owner: { id: number; name: string; subtitle: string };
   candidates: RefImage[];
   /** おすすめ（rank 1）。候補が無ければ null */
   top: RefImage | null;
@@ -286,7 +289,9 @@ export type JobKind =
   | 'apply_change'
   | 'ref_images'
   | 'lora_train'
-  | 'archive';
+  | 'archive'
+  | 'design_background' // 背景の設定画づくり（ロケハン担当）
+  | 'locations';        // 場所の拾い出し（ロケハン担当）
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 

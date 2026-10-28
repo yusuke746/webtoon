@@ -1,4 +1,4 @@
-import type { Character, DesignProposal, Episode, Job } from '@manga/shared';
+import type { Character, DesignKind, DesignProposal, Episode, Job } from '@manga/shared';
 import type { Npc } from './floors';
 import type { OfficeStatus } from './dialogue';
 
@@ -13,7 +13,9 @@ export interface Choice { key: string; label: string }
 export interface Requested {
   jobId: number;
   npcId: string;
-  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design';
+  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations';
+  /** design のとき: キャラか背景か */
+  designKind?: DesignKind;
   episodeId?: number;
   label: string;
   /** 依頼時点の話数（構成依頼で新しい話を見分けるため） */
@@ -46,9 +48,14 @@ export function missingDesign(status: OfficeStatus | null, episode?: Episode | n
   return mainCharacters(status, episode).filter((c) => !c.refImageUrl);
 }
 
-/** 設定担当が選んだおすすめが未採用のまま残っている提案 */
-export function pendingProposals(status: OfficeStatus | null): DesignProposal[] {
-  return (status?.design ?? []).filter((d) => !d.adopted && d.top);
+/** 担当が選んだおすすめが未採用のまま残っている提案 */
+export function pendingProposals(status: OfficeStatus | null, kind: DesignKind = 'character'): DesignProposal[] {
+  return ((kind === 'character' ? status?.design : status?.designBg) ?? []).filter((d) => !d.adopted && d.top);
+}
+
+/** 設定画のない背景 */
+export function missingBgDesign(status: OfficeStatus | null): { id: number; name: string }[] {
+  return (status?.backgrounds ?? []).filter((b) => !b.refImageUrl);
 }
 
 /** 進行表の1話ぶん */
@@ -83,8 +90,12 @@ export function nextHint(status: OfficeStatus | null, focus: Episode | null): st
   if (!focus) return '進行表から担当する話を選ぶ';
   const archived = status.archive?.episodes.find((a) => a.episodeId === focus.id)?.hasSummary;
   const pending = pendingProposals(status).length;
+  const pendingBg = pendingProposals(status, 'background').length;
   const missing = missingDesign(status, focus).length;
+  const missingBg = missingBgDesign(status).length;
   if (pending) return `2F 設定担当が設定画の候補を持っている（${pending} 人分）。採用するか決める`;
+  if (pendingBg) return `2F ロケハン担当が背景の候補を持っている（${pendingBg} 件）。採用するか決める`;
+  if (!missing && missingBg && (focus.status === 'structured' || focus.status === 'paneled')) return `設定画のない場所が ${missingBg} 件。2F ロケハン担当に背景の設定画を頼む`;
   switch (focus.status) {
     case 'draft':
     case 'structured': return missing
@@ -167,10 +178,20 @@ export function planTalk(
           lines: [`第${ep?.number ?? '?'}話を書庫に登録しました。連載メモも更新済みです。`],
           choices: [enter('書庫を見る'), close],
         };
-      case 'design':
+      case 'design': {
+        const dk = delivery.designKind ?? 'character';
         return {
-          lines: ['設定画の候補ができました。', '設定に一番近い1枚を私が選んであります。見てください。'],
-          choices: designChoices(status),
+          lines: dk === 'character'
+            ? ['設定画の候補ができました。', '設定に一番近い1枚を私が選んであります。見てください。']
+            : ['背景の設定画の候補ができました。', '場所の説明に一番近い1枚を選んであります。見てください。'],
+          choices: designChoices(status, dk),
+          deliver: delivery,
+        };
+      }
+      case 'locations':
+        return {
+          lines: ['構成とネームから場所を拾い出しました。', '設定画を作る場所を決めてください。'],
+          choices: [...(missingBgDesign(status).length ? [{ key: 'design:start:background', label: `場所 ${missingBgDesign(status).length} 件の設定画を作ってもらう` }] : []), enter('背景の一覧を見る'), close],
           deliver: delivery,
         };
     }
@@ -222,9 +243,18 @@ export function planTalk(
       const choices: Choice[] = [];
       const pending = pendingProposals(status);
       const missing = (status?.characters ?? []).filter((c) => !c.refImageUrl);
-      if (pending.length) choices.push({ key: 'design:show', label: `設定画の候補を見せて（${pending.length} 人分）` });
-      if (missing.length) choices.push({ key: 'design:start', label: `設定画のない ${missing.length} 人の設定画を作ってもらう` });
+      if (pending.length) choices.push({ key: 'design:show:character', label: `設定画の候補を見せて（${pending.length} 人分）` });
+      if (missing.length) choices.push({ key: 'design:start:character', label: `設定画のない ${missing.length} 人の設定画を作ってもらう` });
       return { lines: baseLines, choices: [...choices, chat, enter('資料室を見る'), close] };
+    }
+    case 'location': {
+      const choices: Choice[] = [];
+      const pending = pendingProposals(status, 'background');
+      const missing = missingBgDesign(status);
+      if (pending.length) choices.push({ key: 'design:show:background', label: `背景の設定画の候補を見せて（${pending.length} 件）` });
+      if (missing.length) choices.push({ key: 'design:start:background', label: `設定画のない ${missing.length} 件の背景の設定画を作ってもらう` });
+      if (eps.length) choices.push({ key: 'locations:extract', label: (status?.backgrounds.length ? '構成とネームから新しい場所を拾い出してもらう' : '構成とネームから場所を拾い出してもらう') });
+      return { lines: baseLines, choices: [...choices, chat, enter('背景の一覧を見る'), close] };
     }
     case 'chief':
       return { lines: baseLines, choices: [chat, enter('ダッシュボードを見る'), close] };
@@ -264,14 +294,20 @@ export function inputHintFor(purpose: string, npc: Npc): string {
   }
 }
 
-/** 設定画の提案に対する選択肢: おすすめを全員採用 / 人ごとに別の候補 */
-export function designChoices(status: OfficeStatus | null): Choice[] {
-  const pending = pendingProposals(status);
+/** 設定画の提案に対する選択肢: おすすめを全部採用 / 対象ごとに別の候補 */
+export function designChoices(status: OfficeStatus | null, kind: DesignKind = 'character'): Choice[] {
+  const pending = pendingProposals(status, kind);
+  const unit = kind === 'character' ? '人' : '件';
   const choices: Choice[] = [];
-  if (pending.length) choices.push({ key: 'design:adopt:all', label: pending.length > 1 ? `おすすめを ${pending.length} 人とも採用する` : `${pending[0].character.name}はこの顔で採用する` });
-  for (const d of pending.slice(0, 4)) {
-    if (d.candidates.length > 1) choices.push({ key: `design:alt:${d.character.id}`, label: `${d.character.name}は別の候補を見る` });
+  if (pending.length) {
+    choices.push({
+      key: `design:adopt:all:${kind}`,
+      label: pending.length > 1 ? `おすすめを ${pending.length} ${unit}とも採用する` : `${pending[0].owner.name}は${kind === 'character' ? 'この顔' : 'この絵'}で採用する`,
+    });
   }
-  choices.push({ key: 'enter', label: '資料室で見る' }, { key: 'close', label: 'また今度' });
+  for (const d of pending.slice(0, 4)) {
+    if (d.candidates.length > 1) choices.push({ key: `design:alt:${kind}:${d.owner.id}`, label: `${d.owner.name}は別の候補を見る` });
+  }
+  choices.push({ key: 'enter', label: kind === 'character' ? '資料室で見る' : '背景の一覧を見る' }, { key: 'close', label: 'また今度' });
   return choices;
 }

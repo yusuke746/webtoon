@@ -610,26 +610,62 @@ ${attempt}
 出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
 }
 
-/** 設定画の候補を見比べて順位付けする（設定担当） */
+/** 設定画の候補を見比べて順位付けする（キャラ: 設定担当 / 背景: ロケハン担当） */
 export function artPickPrompt(
-  character: { name: string; appearance: string; visualPrompt: string | null },
+  kind: 'character' | 'background',
+  owner: { name: string; description: string; visualPrompt: string | null },
   candidates: { id: number; file: string }[],
 ): string {
-  return `キャラクター「${character.name}」の設定画の候補を見比べ、設定に最も忠実な1枚を選んでください。
+  const what = kind === 'character' ? `キャラクター「${owner.name}」の設定画` : `場所「${owner.name}」の背景設定画`;
+  const criteria = kind === 'character'
+    ? `1. 髪型・髪色・目・服装・小物が設定と一致している
+2. 顔立ちが判別しやすく、以後の作画の基準にしやすい（正面寄り・表情ニュートラル・他人物なし）
+3. 文字・透かし・破綻がない`
+    : `1. 建物の種類・内装・家具・照明・雰囲気が設定と一致している
+2. 空間の構造が分かる引きの構図で、以後「同じ場所」を描く基準にしやすい
+3. 人物が写っていない。文字・看板の文字・透かし・破綻がない`;
+  return `${what}の候補を見比べ、設定に最も忠実な1枚を選んでください。
 まず Read ツールで各画像ファイルを開いて実際に見てください（開かずに判定しないこと）。
 
 ## 設定（これに最も近いものを選ぶ）
-${character.visualPrompt ? `- 固定文: ${character.visualPrompt}\n` : ''}- 外見: ${character.appearance || '（詳細なし）'}
+${owner.visualPrompt ? `- 固定文: ${owner.visualPrompt}\n` : ''}- 説明: ${owner.description || '（詳細なし）'}
 
 ## 候補
 ${candidates.map((c, i) => `- 候補${i + 1} id=${c.id}: ${c.file}`).join('\n')}
 
 ## 判定基準（優先順）
-1. 髪型・髪色・目・服装・小物が設定と一致している
-2. 顔立ちが判別しやすく、以後の作画の基準にしやすい（正面寄り・表情ニュートラル・他人物なし）
-3. 文字・透かし・破綻がない
+${criteria}
 
 ## 出力形式（JSON）
 { "ranking": [最も良い候補のidから順に全候補のid], "reason": "1位を選んだ理由と、他を下げた理由（日本語・簡潔）" }
 出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
+}
+
+/** 構成・ネームから繰り返し使う場所を拾い出す（ロケハン担当） */
+export function locationsPrompt(
+  project: Project,
+  episodes: { episode: Episode; panels: { description: string; backgroundId: number | null }[] }[],
+  existingNames: string[],
+): string {
+  return `あなたは漫画編集部のロケハン担当です。以下の構成とネームから、«繰り返し登場する、毎回同じ構造で描くべき場所» を拾い出してください。
+一度しか出ない場所や、描写が「街」「路上」程度に曖昧な場所は入れないでください。
+
+## 作品あらすじ
+${project.synopsis}
+
+## 話ごとのシーンとコマ
+${episodes.map(({ episode, panels }) => `### 第${episode.number}話「${episode.title}」
+シーン: ${episode.scenes.map((sc) => `${sc.title}（${sc.summary}）`).join(' / ')}
+${panels.length ? `コマ: ${panels.map((p) => p.description).join(' / ')}` : ''}`).join('\n')}
+
+## 既に登録済みの場所（重複させない）
+${existingNames.length ? existingNames.map((n) => `- ${n}`).join('\n') : 'なし'}
+
+## 出力形式（JSON）
+{
+  "locations": [
+    { "name": "場所の名前（短く。作中で呼ぶ名前）", "description": "建物の種類・内装・家具・照明・雰囲気・時間帯の既定（日本語で2〜4文）" }
+  ]
+}
+${JSON_ONLY}`;
 }

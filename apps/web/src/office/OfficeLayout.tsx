@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Episode, Job } from '@manga/shared';
+import type { DesignKind, Episode, Job } from '@manga/shared';
 import { api } from '../api';
 import { FLOORS, FLOOR_BY_ID, npcForPath, type Floor, type Npc } from './floors';
 import { OfficeMap, type PlayerState } from './OfficeMap';
@@ -10,7 +10,7 @@ import {
   designChoices, inputHintFor, mainCharacters, nextHint, pendingProposals, pickChoices, planTalk, questRows,
   type Choice, type Delivery, type Requested,
 } from './workflow';
-import { DesignAltView, DesignView, EpisodesView, PagesView, ScenesView } from './Deliverables';
+import { DesignAltView, DesignView, EpisodesView, LocationsView, PagesView, ScenesView } from './Deliverables';
 
 /**
  * RPG 風オフィス = 制作工程そのもの。
@@ -34,14 +34,14 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const loadStatus = useCallback(async () => {
     if (!projectId) { setStatus(null); return; }
     try {
-      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles, design] = await Promise.all([
+      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles, design, designBg] = await Promise.all([
         api.getProject(projectId), api.listEpisodes(projectId), api.listCharacters(projectId),
         api.listBackgrounds(projectId), api.foreshadowWarnings(projectId), api.listDiscussions(projectId),
         api.getArchive(projectId).catch(() => null), api.listArtStyles(projectId).catch(() => []),
-        api.getDesign(projectId).catch(() => null),
+        api.getDesign(projectId, 'character').catch(() => null), api.getDesign(projectId, 'background').catch(() => null),
       ]);
       const style = styles.find((s) => s.id === project.artStyleId) ?? null;
-      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design });
+      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design, designBg });
     } catch {
       setStatus(null);
     }
@@ -163,15 +163,19 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   }, [projectId, focusId]);
 
   /** 成果物の表示を用意する（原稿は取得が要るので非同期）。作画チェックの指摘数も返す */
-  const buildContent = useCallback(async (kind: Delivery['kind'], ep: Episode | null, countBefore?: number): Promise<{ content: React.ReactNode; fails: number }> => {
+  const buildContent = useCallback(async (kind: Delivery['kind'], ep: Episode | null, countBefore?: number, designKind: DesignKind = 'character'): Promise<{ content: React.ReactNode; fails: number }> => {
     if (kind === 'structure') {
       const eps = status?.episodes ?? [];
       const added = countBefore !== undefined ? eps.slice(countBefore) : eps.slice(-2);
       return { content: <EpisodesView episodes={added.length ? added : eps} title="新しい話の構成" />, fails: 0 };
     }
     if (kind === 'design') {
-      const proposals = await api.getDesign(projectId!);
+      const proposals = await api.getDesign(projectId!, designKind);
       return { content: <DesignView proposals={proposals} />, fails: 0 };
+    }
+    if (kind === 'locations') {
+      const bgs = await api.listBackgrounds(projectId!);
+      return { content: <LocationsView backgrounds={bgs} />, fails: 0 };
     }
     if (!ep) return { content: null, fails: 0 };
     if (kind === 'scenes') return { content: <ScenesView episode={ep} />, fails: 0 };
@@ -199,7 +203,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (plan.deliver) {
       const ep = status?.episodes.find((e) => e.id === plan.deliver!.episodeId) ?? null;
       if (ep) setFocus(ep.id);
-      buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore).then(({ content, fails }) =>
+      buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore, plan.deliver.designKind).then(({ content, fails }) =>
         setTalk((t) => (t && t.npc.id === npc.id ? { ...t, content, choices: withRedraw(t.choices, fails) } : t)));
     }
   }, [busyNpcIds, deliveries, status, focus, buildContent, setFocus]);
@@ -317,54 +321,65 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
-    if (key === 'design:start' && projectId) {
+    if (key === 'locations:extract' && projectId) {
       try {
-        const job = await api.startDesignJob(projectId);
-        track(job, { npcId: 'chara', kind: 'design', label: job.label });
-        sayAndClose(['承知しました。候補を数枚ずつ描いて、設定に一番近いものを選んでおきます。', 'できたら呼びに行きます。']);
+        const job = await api.startLocationsJob(projectId);
+        track(job, { npcId: 'location', kind: 'locations', label: job.label });
+        sayAndClose(['わかりました。構成とネームを読んで、何度も出てくる場所を拾い出します。', 'できたら呼びに行きます。']);
       } catch (e) { fail(e as Error); }
       return;
     }
-    if (key === 'design:show' && projectId) {
-      const proposals = await api.getDesign(projectId);
-      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignView proposals={proposals} />, choices: designChoices({ ...(status as NonNullable<typeof status>), design: proposals }), reply: null });
+    if (key.startsWith('design:start:') && projectId) {
+      const dk = key.split(':')[2] as DesignKind;
+      try {
+        const job = await api.startDesignJob(projectId, dk);
+        track(job, { npcId: dk === 'character' ? 'chara' : 'location', kind: 'design', designKind: dk, label: job.label });
+        sayAndClose([
+          dk === 'character' ? '承知しました。候補を数枚ずつ描いて、設定に一番近いものを選んでおきます。' : 'わかりました。場所ごとに候補を描いて、説明に一番近いものを選んでおきます。',
+          'できたら呼びに行きます。',
+        ]);
+      } catch (e) { fail(e as Error); }
       return;
     }
-    if (key === 'design:adopt:all' && projectId) {
+    const showDesign = async (dk: DesignKind) => {
+      const proposals = await api.getDesign(projectId!, dk);
+      const st = { ...(status as NonNullable<typeof status>), ...(dk === 'character' ? { design: proposals } : { designBg: proposals }) };
+      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignView proposals={proposals} />, choices: designChoices(st, dk), reply: null });
+    };
+    if (key.startsWith('design:show:') && projectId) { await showDesign(key.split(':')[2] as DesignKind); return; }
+    if (key.startsWith('design:adopt:all:') && projectId) {
+      const dk = key.split(':')[3] as DesignKind;
       setTalk((t) => t && { ...t, phase: 'waiting' });
       try {
-        const pending = pendingProposals(status);
-        for (const d of pending) await api.adoptDesign(d.character.id, d.top!.id);
+        const pending = pendingProposals(status, dk);
+        for (const d of pending) await api.adoptDesign(dk, d.owner.id, d.top!.id);
         await loadStatus();
         sayAndClose([
-          pending.length > 1 ? `${pending.map((d) => d.character.name).join('・')}の設定画を決めました。` : `${pending[0]?.character.name ?? ''}の設定画を決めました。`,
-          '正面・横顔・全身・表情の4枚セットを描き足しておきます。作画のときはこれを基準に見ます。',
+          `${pending.map((d) => d.owner.name).join('・')}の設定画を決めました。`,
+          dk === 'character' ? '正面・横顔・全身・表情の4枚セットを描き足しておきます。作画のときはこれを基準に見ます。' : '引き・入口から・細部・夜の4枚セットを描き足しておきます。同じ場所はこれを基準に描きます。',
         ], 'よろしく');
       } catch (e) { fail(e as Error); }
       return;
     }
     if (key.startsWith('design:alt:') && projectId) {
-      const cid = Number(key.split(':')[2]);
-      const proposals = await api.getDesign(projectId);
-      const d = proposals.find((x) => x.character.id === cid);
+      const [, , dk, oidS] = key.split(':');
+      const oid = Number(oidS);
+      const proposals = await api.getDesign(projectId, dk as DesignKind);
+      const d = proposals.find((x) => x.owner.id === oid);
       if (!d) return;
-      const choices: Choice[] = d.candidates.map((c, i) => ({ key: `design:pick:${cid}:${c.id}`, label: `候補${i + 1}${c.rank === 1 ? '（おすすめ）' : ''}を採用する` }));
-      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignAltView proposal={d} />, choices: [...choices, { key: 'design:show', label: '戻る' }], reply: null });
+      const choices: Choice[] = d.candidates.map((c, i) => ({ key: `design:pick:${dk}:${oid}:${c.id}`, label: `候補${i + 1}${c.rank === 1 ? '（おすすめ）' : ''}を採用する` }));
+      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignAltView proposal={d} />, choices: [...choices, { key: `design:show:${dk}`, label: '戻る' }], reply: null });
       return;
     }
     if (key.startsWith('design:pick:') && projectId) {
-      const [, , cidS, ridS] = key.split(':');
+      const [, , dk, oidS, ridS] = key.split(':');
       setTalk((t) => t && { ...t, phase: 'waiting' });
       try {
-        await api.adoptDesign(Number(cidS), Number(ridS));
+        await api.adoptDesign(dk as DesignKind, Number(oidS), Number(ridS));
         await loadStatus();
-        const left = (await api.getDesign(projectId)).filter((x) => !x.adopted && x.top);
-        if (left.length) {
-          const proposals = await api.getDesign(projectId);
-          setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignView proposals={proposals} />, choices: designChoices({ ...(status as NonNullable<typeof status>), design: proposals }), reply: null });
-        } else {
-          sayAndClose(['採用しました。4枚セットを描き足しておきます。'], 'よろしく');
-        }
+        const left = (await api.getDesign(projectId, dk as DesignKind)).filter((x) => !x.adopted && x.top);
+        if (left.length) await showDesign(dk as DesignKind);
+        else sayAndClose(['採用しました。4枚セットを描き足しておきます。'], 'よろしく');
       } catch (e) { fail(e as Error); }
       return;
     }
@@ -511,6 +526,12 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
                     <span>準備</span>
                     <span className={`qstep ${done === main.length ? 'done' : working ? 'active' : ''}`}>キャラ設定画 {done}/{main.length}</span>
                     {pendingProposals(status).length > 0 && <span className="qstep active">候補あり</span>}
+                    {status.backgrounds.length > 0 && (
+                      <span className={`qstep ${status.backgrounds.every((b) => !!b.refImageUrl) ? 'done' : busyNpcIds.has('location') ? 'active' : ''}`}>
+                        背景設定画 {status.backgrounds.filter((b) => !!b.refImageUrl).length}/{status.backgrounds.length}
+                      </span>
+                    )}
+                    {pendingProposals(status, 'background').length > 0 && <span className="qstep active">背景候補あり</span>}
                   </div>
                 );
               })()}

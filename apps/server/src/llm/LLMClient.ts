@@ -19,7 +19,8 @@ export type LLMTask =
   | 'revise_scenes'  // 指示に沿ったシーン構成の書き直し
   | 'visual_prompt'  // 絵の指示用の固定文（英語）
   | 'art_check'      // 作画チェック（画像を見て設定と照合）
-  | 'art_pick';      // 設定画の候補を見比べて順位付け
+  | 'art_pick'       // 設定画の候補を見比べて順位付け
+  | 'locations';     // 構成・ネームから場所を拾い出す
 
 export interface LLMRequest {
   task: LLMTask;

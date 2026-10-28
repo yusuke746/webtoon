@@ -10,13 +10,15 @@ export interface OfficeStatus {
   project: Project | null;
   episodes: Episode[];
   characters: Character[];
-  backgrounds: { id: number; name: string; refImageUrl: string | null }[];
+  backgrounds: { id: number; name: string; description: string; refImageUrl: string | null }[];
   warnings: ForeshadowWarning[];
   discussions: Discussion[];
   archive: ArchiveInfo | null;
   artStyleName: string | null;
-  /** 設定画の提案（キャラごとの候補とおすすめ） */
+  /** 設定画の提案（キャラ） */
   design: DesignProposal[] | null;
+  /** 設定画の提案（背景） */
+  designBg: DesignProposal[] | null;
 }
 
 const EP_STATUS: Record<string, string> = {
@@ -83,9 +85,14 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
 
     case 'location': {
       const bgs = s?.backgrounds ?? [];
-      return bgs.length
-        ? [`登録済みの場所は ${bgs.length} 件。${bgs.slice(0, 3).map((b) => b.name).join('・')}。`, '同じ名前の場所はネーム生成時にコマへ自動で割り当てられます。']
-        : ['ロケハン担当です。まだ場所の登録がありません。', '何度も出てくる場所を登録しておくと、毎回同じ構造で描けます。'];
+      const pending = (s?.designBg ?? []).filter((d) => !d.adopted && d.top).length;
+      const noRef = bgs.filter((b) => !b.refImageUrl).length;
+      if (!bgs.length) return ['ロケハン担当です。まだ場所の登録がありません。', '構成とネームから、繰り返し出てくる場所を拾い出せます。'];
+      const lines = [`登録済みの場所は ${bgs.length} 件。${bgs.slice(0, 3).map((b) => b.name).join('・')}${bgs.length > 3 ? ' ほか' : ''}。`];
+      if (pending) lines.push(`背景の設定画の候補が ${pending} 件できています。おすすめを選んであります。`);
+      else if (noRef) lines.push(`設定画がない場所が ${noRef} 件。頼んでもらえれば候補を描いて選びます。`);
+      else lines.push('全部の場所に設定画があります。同じ名前の場所はネーム生成時にコマへ自動で割り当てられます。');
+      return lines;
     }
 
     case 'artist': {

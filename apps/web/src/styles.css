@@ -861,3 +861,10 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .quest-prep .qstep { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #3a3350; color: #9a93ad; }
 .quest-prep .qstep.done { background: #2f6d3b; color: #d9f5de; }
 .quest-prep .qstep.active { background: #ffd866; color: #1f1a24; }
+
+/* 背景の設定画は横長 */
+.design-grid.background .design-top { width: 176px; }
+.design-grid.background .design-top img, .design-grid.background .design-top .img-fallback { width: 176px; height: 99px; }
+.design-grid.background .design-card { width: 360px; }
+.design-grid.background .design-thumbs img, .design-grid.background .design-thumbs .img-fallback { width: 56px; height: 32px; }
+.design-alt.background .design-alt-item img, .design-alt.background .design-alt-item .img-fallback { width: 200px; height: 112px; }

@@ -13,7 +13,7 @@ import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
 import { talkToNpc } from './engines/talk.js';
-import { adoptDesign, listDesignProposals, startCharacterDesignJob } from './engines/design.js';
+import { adoptDesign, listDesignProposals, startDesignJob, startLocationsJob } from './engines/design.js';
 import {
   getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
   updateBibleNotes, writeArchiveFile,
@@ -674,19 +674,25 @@ router.post('/projects/:id/talk', wrap(async (req, res) => {
   res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : []));
 }));
 
-// ============ 設定画づくり（キャラクターデザイン） ============
+// ============ 設定画づくり（キャラ・背景） / 場所の拾い出し ============
+
+const designKind = (v: unknown): 'character' | 'background' => (v === 'background' ? 'background' : 'character');
 
 router.post('/projects/:id/jobs/design', wrap((req, res) => {
-  const ids = Array.isArray(req.body?.characterIds) ? req.body.characterIds.map(Number) : undefined;
-  res.status(202).json(startCharacterDesignJob(id(req), ids));
+  const ids = Array.isArray(req.body?.ownerIds) ? req.body.ownerIds.map(Number) : undefined;
+  res.status(202).json(startDesignJob(id(req), designKind(req.body?.kind), ids));
 }));
 
 router.get('/projects/:id/design', wrap((req, res) => {
-  res.json(listDesignProposals(id(req)));
+  res.json(listDesignProposals(id(req), designKind(req.query.kind)));
 }));
 
-router.post('/characters/:id/design/adopt', wrap(async (req, res) => {
-  const refImageId = Number(req.body?.refImageId);
-  if (!refImageId) { res.status(400).json({ error: 'refImageId が必要です' }); return; }
-  res.json(await adoptDesign(id(req), refImageId));
+router.post('/design/adopt', wrap(async (req, res) => {
+  const { kind, ownerId, refImageId } = req.body ?? {};
+  if (!ownerId || !refImageId) { res.status(400).json({ error: 'ownerId と refImageId が必要です' }); return; }
+  res.json(await adoptDesign(designKind(kind), Number(ownerId), Number(refImageId)));
+}));
+
+router.post('/projects/:id/jobs/locations', wrap((req, res) => {
+  res.status(202).json(startLocationsJob(id(req)));
 }));

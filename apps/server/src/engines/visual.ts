@@ -258,7 +258,7 @@ export function startRefVariationsJob(
   kind: RefImageKind,
   ownerId: number,
   count: number,
-  options: { prompts?: string[]; label?: string } = {},
+  options: { prompts?: string[]; label?: string; jobKind?: 'ref_images' | 'design_background' } = {},
 ): Job {
   const { name } = loadRefTarget(kind, ownerId);
   if (kind === 'style') throw new Error('画風にはバリエーション生成は使えません');
@@ -281,7 +281,7 @@ export function startRefVariationsJob(
   return startJob(
     {
       projectId,
-      kind: 'ref_images',
+      kind: options.jobKind ?? 'ref_images',
       label: options.label ?? `${kindLabel}学習用バリエーション生成: ${name}`,
       totalSteps: count,
       step: `採用画像を基準に ${count} 枚生成します…`,

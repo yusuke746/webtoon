@@ -145,7 +145,8 @@ export const FLOORS: Floor[] = [
       {
         id: 'location', name: 'ロケハン担当', title: '資料室・背景', x: 11, y: 5, room: '背景・ロケーション',
         look: { hair: '#4a7a4a', cloth: '#c08a3a', hairStyle: 'short' },
-        route: '/projects/{p}/backgrounds', hint: '同じ場所を同じ絵で描くための基準', canChat: true,
+        route: '/projects/{p}/backgrounds', hint: '場所の拾い出し・背景の設定画', canChat: true, jobKinds: ['design_background', 'locations'],
+        desk: { x: 13, y: 5, facing: 'right' },
       },
     ],
   },
