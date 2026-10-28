@@ -74,8 +74,10 @@ export interface Character {
   personality: string;
   /** 画像生成時に一貫性維持へ使う参照画像URL */
   refImageUrl: string | null;
-  /** キャラ専用LoRAのURL/識別子 */
+  /** キャラ専用LoRAのURL/識別子（任意。既定の一貫性手段は参照画像 + 固定文 + 作画チェック） */
   loraUrl: string | null;
+  /** 絵の指示用の固定文（英語）。全コマで同じ文言を画像プロンプトに置く。Claude が一度だけ生成 */
+  visualPrompt: string | null;
   /** ライブラリからキャスティングした場合の元アセットID */
   sourceAssetId: number | null;
   createdAt: string;
@@ -180,7 +182,13 @@ export interface Panel {
   /** 背景ID（背景の参照画像/LoRAの解決に使用。未設定なら null） */
   backgroundId: number | null;
   status: PanelStatus;
+  /** 作画チェック（Claude が画像を見て設定と照合）の結果 */
+  checkStatus: PanelCheckStatus;
+  /** 指摘内容（改行区切り） */
+  checkNotes: string | null;
 }
+
+export type PanelCheckStatus = 'none' | 'pass' | 'fail' | 'skipped';
 
 // ---------- AI議論 ----------
 
@@ -195,6 +203,10 @@ export interface Discussion {
   summary: string | null;
   /** 採用時に適用する具体的な変更提案 */
   proposal: string | null;
+  /** 採用した提案を構成に反映したか */
+  applied: boolean;
+  /** 採否を決めた日時 */
+  decidedAt: string | null;
   createdAt: string;
 }
 
@@ -223,8 +235,10 @@ export interface Background {
   description: string;
   /** 画像生成時に一貫性維持へ使う参照画像URL */
   refImageUrl: string | null;
-  /** 背景専用LoRAのURL/識別子 */
+  /** 背景専用LoRAのURL/識別子（任意） */
   loraUrl: string | null;
+  /** 絵の指示用の固定文（英語） */
+  visualPrompt: string | null;
   sourceAssetId: number | null;
   createdAt: string;
 }
@@ -248,7 +262,35 @@ export interface RefImage {
   prompt: string;
   /** 対象の refImageUrl として採用中か */
   selected: boolean;
+  /** 設定担当（Claude）が付けた順位。1 がおすすめ。未評価は null */
+  rank: number | null;
+  /** 順位の理由 */
+  note: string | null;
+  /** candidate: 設定画の候補 / view: 採用画像から派生した4枚セット / photo: 持ち込んだロケハン写真（背景のみ） */
+  role: 'candidate' | 'view' | 'photo';
   createdAt: string;
+}
+
+/** 画像生成モデルが参照画像をどう受け取るか（サーバーの台帳から取得） */
+export interface ImageModelCaps {
+  model: string;
+  label: string;
+  refMode: 'multi' | 'single' | 'none';
+  maxRefs: number;
+  note: string;
+}
+
+export type DesignKind = 'character' | 'background';
+
+/** 設定画の提案（キャラ・背景ごと） */
+export interface DesignProposal {
+  kind: DesignKind;
+  owner: { id: number; name: string; subtitle: string };
+  candidates: RefImage[];
+  /** おすすめ（rank 1）。候補が無ければ null */
+  top: RefImage | null;
+  /** 採用済み（refImageUrl あり）か */
+  adopted: boolean;
 }
 
 // ---------- 非同期ジョブ ----------
@@ -261,7 +303,10 @@ export type JobKind =
   | 'discussion'
   | 'apply_change'
   | 'ref_images'
-  | 'lora_train';
+  | 'lora_train'
+  | 'archive'
+  | 'design_background' // 背景の設定画づくり（ロケハン担当）
+  | 'locations';        // 場所の拾い出し（ロケハン担当）
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -327,6 +372,40 @@ export interface LoraTraining {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- 連載アーカイブ（書庫） ----------
+
+export interface ArchiveFile {
+  /** アーカイブルートからの相対パス */
+  path: string;
+  size: number;
+  mtime: string;
+  /** UI から編集できるか（Markdown のみ） */
+  editable: boolean;
+}
+
+export interface ArchiveEpisodeStatus {
+  episodeId: number;
+  number: number;
+  title: string;
+  status: EpisodeStatus;
+  hasScript: boolean;
+  /** マネージャーによる要約（summary.md）があるか */
+  hasSummary: boolean;
+  summaryUpdatedAt: string | null;
+}
+
+export interface ArchiveInfo {
+  /** ディスク上の絶対パス */
+  dir: string;
+  exists: boolean;
+  files: ArchiveFile[];
+  episodes: ArchiveEpisodeStatus[];
+  /** bible.md の「連載メモ」ブロック（未生成なら空文字） */
+  notes: string;
+  /** bible.md の「会議の決定事項」ブロック（採否の決まった議題。無ければ空文字） */
+  decisions: string;
 }
 
 // ---------- デフォルト値 ----------

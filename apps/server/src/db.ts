@@ -189,6 +189,20 @@ function addColumnIfMissing(table: string, column: string, definition: string) {
 
 // パネルに背景を紐付ける（作画時に背景の参照画像/LoRAを渡すため）
 addColumnIfMissing('panels', 'background_id', 'INTEGER');
+addColumnIfMissing('discussions', 'applied', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('discussions', 'decided_at', 'TEXT');
+// 作画チェック（Claude が画像を見て設定と照合）
+addColumnIfMissing('panels', 'check_status', "TEXT NOT NULL DEFAULT 'none'");
+addColumnIfMissing('panels', 'check_notes', 'TEXT');
+// 絵の指示用の固定文（英語）
+addColumnIfMissing('characters', 'visual_prompt', 'TEXT');
+// 設定画の候補に付ける順位と理由（設定担当 = Claude が見比べて決める）
+addColumnIfMissing('ref_images', 'rank', 'INTEGER');
+addColumnIfMissing('ref_images', 'note', 'TEXT');
+addColumnIfMissing('ref_images', 'role', "TEXT NOT NULL DEFAULT 'candidate'");
+// role 列を追加する前に作った派生ビュー（プロンプトで判別）を view に直す（何度実行しても同じ結果）
+db.exec("UPDATE ref_images SET role = 'view' WHERE role = 'candidate' AND prompt LIKE 'Redraw the exact same%'");
+addColumnIfMissing('backgrounds', 'visual_prompt', 'TEXT');
 
 // ---------- 行 → ドメイン型 変換 ----------
 
@@ -230,6 +244,7 @@ export function rowToCharacter(r: Row): Character {
     personality: r.personality,
     refImageUrl: r.ref_image_url,
     loraUrl: r.lora_url,
+    visualPrompt: r.visual_prompt ?? null,
     sourceAssetId: r.source_asset_id,
     createdAt: r.created_at,
   };
@@ -289,6 +304,8 @@ export function rowToPanel(r: Row): Panel {
     characterIds: JSON.parse(r.character_ids),
     backgroundId: r.background_id ?? null,
     status: r.status,
+    checkStatus: r.check_status ?? 'none',
+    checkNotes: r.check_notes ?? null,
   };
 }
 
@@ -300,6 +317,7 @@ export function rowToBackground(r: Row): Background {
     description: r.description,
     refImageUrl: r.ref_image_url,
     loraUrl: r.lora_url,
+    visualPrompt: r.visual_prompt ?? null,
     sourceAssetId: r.source_asset_id,
     createdAt: r.created_at,
   };
@@ -314,6 +332,9 @@ export function rowToRefImage(r: Row): RefImage {
     url: r.url,
     prompt: r.prompt,
     selected: !!r.selected,
+    rank: r.rank ?? null,
+    note: r.note ?? null,
+    role: r.role === 'view' ? 'view' : r.role === 'photo' ? 'photo' : 'candidate',
     createdAt: r.created_at,
   };
 }
@@ -363,6 +384,8 @@ export function rowToDiscussion(r: Row): Discussion {
     status: r.status,
     summary: r.summary,
     proposal: r.proposal,
+    applied: !!r.applied,
+    decidedAt: r.decided_at ?? null,
     createdAt: r.created_at,
   };
 }

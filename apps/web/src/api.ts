@@ -1,8 +1,11 @@
 import type {
+  ArchiveInfo, DesignKind, DesignProposal, ImageModelCaps,
   ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
   Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
   Panel, Project, RefImage, RefImageKind, Worldview,
 } from '@manga/shared';
+
+export interface Proposal { title: string; detail: string; instruction: string }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -52,7 +55,7 @@ export const api = {
   generateCharacters: (projectId: number) => post<Character[]>(`/projects/${projectId}/generate/characters`),
   generatePanels: (episodeId: number) => post<Panel[]>(`/episodes/${episodeId}/generate/panels`),
   /** 一括作画は非同期。Job を返すので進捗はポーリングで追う */
-  generateEpisodeImages: (episodeId: number) => post<Job>(`/episodes/${episodeId}/generate/images`),
+  generateEpisodeImages: (episodeId: number, retryFailed = false) => post<Job>(`/episodes/${episodeId}/generate/images`, { retryFailed }),
   generatePanelImage: (panelId: number) => post<Panel>(`/panels/${panelId}/generate-image`),
 
   // エピソード / パネル
@@ -145,4 +148,52 @@ export const api = {
     },
   ) => post<LoraStart>(`/projects/${projectId}/lora-trainings`, body),
   cancelLoraTraining: (id: number) => post<LoraTraining>(`/lora-trainings/${id}/cancel`),
+
+  // 連載アーカイブ（書庫）
+  getArchive: (projectId: number) => get<ArchiveInfo>(`/projects/${projectId}/archive`),
+  syncArchive: (projectId: number) => post<ArchiveInfo>(`/projects/${projectId}/archive/sync`),
+  readArchiveFile: (projectId: number, path: string) =>
+    get<{ path: string; content: string }>(`/projects/${projectId}/archive/file?path=${encodeURIComponent(path)}`),
+  writeArchiveFile: (projectId: number, path: string, content: string) =>
+    put<{ ok: boolean }>(`/projects/${projectId}/archive/file`, { path, content }),
+  registerEpisodeToArchive: (episodeId: number) => post<Job>(`/episodes/${episodeId}/archive/register`),
+  updateArchiveNotes: (projectId: number) => post<{ notes: string }>(`/projects/${projectId}/archive/notes`),
+
+  // オフィスの NPC との相談
+  talk: (projectId: number, npcId: string, message: string, history: { role: 'user' | 'npc'; text: string }[], episodeId?: number | null) =>
+    post<{ reply: string; action: 'apply_change' | null }>(`/projects/${projectId}/talk`, { npcId, message, history, episodeId }),
+  /** NPC からの提案（next: 次の展開 / review: 気になる点）。canApply なら各案に反映用の指示文が付く */
+  propose: (projectId: number, npcId: string, mode: 'next' | 'review', episodeId?: number | null) =>
+    post<{ reply: string; proposals: Proposal[]; canApply: boolean }>(`/projects/${projectId}/propose`, { npcId, mode, episodeId }),
+
+  // オフィス用ジョブ（会話から頼む作業）
+  startStructureJob: (projectId: number, episodeCount: number, instruction?: string) =>
+    post<Job>(`/projects/${projectId}/jobs/structure`, { episodeCount, instruction }),
+  startReviseScenesJob: (episodeId: number, instruction: string) =>
+    post<Job>(`/episodes/${episodeId}/jobs/revise-scenes`, { instruction }),
+  startPanelsJob: (episodeId: number, instruction?: string) =>
+    post<Job>(`/episodes/${episodeId}/jobs/panels`, { instruction }),
+
+  // 設定画づくり
+  startDesignJob: (projectId: number, kind: DesignKind, ownerIds?: number[]) => post<Job>(`/projects/${projectId}/jobs/design`, { kind, ownerIds }),
+  getDesign: (projectId: number, kind: DesignKind) => get<DesignProposal[]>(`/projects/${projectId}/design?kind=${kind}`),
+  adoptDesign: (kind: DesignKind, ownerId: number, refImageId: number) =>
+    post<{ ref: RefImage; job: Job | null }>(`/design/adopt`, { kind, ownerId, refImageId }),
+  startLocationsJob: (projectId: number) => post<Job>(`/projects/${projectId}/jobs/locations`),
+
+  // 画像モデルの能力（参照画像をどう受け取るか）
+  listImageModels: () => get<(ImageModelCaps & { why: string })[]>('/image/models'),
+  getModelCaps: (model: string) => get<ImageModelCaps>(`/image/model-caps?model=${encodeURIComponent(model)}`),
+
+  // ロケハン写真の持ち込み
+  uploadImage: async (file: File) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('ファイルを読めませんでした'));
+      r.readAsDataURL(file);
+    });
+    return post<{ url: string }>('/uploads', { dataUrl, name: file.name.replace(/\.[^.]+$/, '') });
+  },
+  attachBackgroundPhotos: (backgroundId: number, urls: string[]) => post<RefImage[]>(`/backgrounds/${backgroundId}/photos`, { urls }),
 };

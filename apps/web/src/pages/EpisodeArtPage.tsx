@@ -94,7 +94,12 @@ export function EpisodeArtPage() {
       </div>
 
       <div className="card">
-        <h3>ページプレビュー</h3>
+        <div className="card-head">
+          <h3>ページプレビュー</h3>
+          <Link to={`/projects/${projectId}/episodes/${episodeId}/read?back=${encodeURIComponent(`/projects/${projectId}/episodes/${episodeId}/art`)}`}>
+            <button className="primary sm">縦読みで読む</button>
+          </Link>
+        </div>
         <PageViewer panels={panels} rules={project.panelRules} />
       </div>
 
@@ -113,8 +118,13 @@ export function EpisodeArtPage() {
                 <div className="row tight" style={{ marginBottom: 4 }}>
                   <span className="badge">P{p.layout.page}-{p.index + 1}</span>
                   <span className={`badge ${st.cls}`}>{st.label}</span>
+                  {p.checkStatus === 'pass' && <span className="badge ok" title="設定担当のチェックに合格">監修OK</span>}
+                  {p.checkStatus === 'fail' && <span className="badge danger" title={p.checkNotes ?? ''}>要確認</span>}
                 </div>
                 <div className="muted">{p.description}</div>
+                {p.checkStatus === 'fail' && p.checkNotes && (
+                  <div className="check-notes">{p.checkNotes}</div>
+                )}
               </div>
               <div className="acts">
                 <button className="sm" disabled={busy !== null || tracker.running}
@@ -135,6 +145,16 @@ export function EpisodeArtPage() {
           );
         })}
       </div>
+
+      {panels.some((p) => p.checkStatus === 'fail') && (
+        <div className="card warn-box" style={{ marginBottom: 14 }}>
+          設定担当のチェックで <strong>{panels.filter((p) => p.checkStatus === 'fail').length} コマ</strong> に指摘があります（各コマの「要確認」を参照）。
+          <button className="sm" style={{ marginLeft: 10 }} disabled={busy !== null || tracker.running}
+            onClick={async () => tracker.track(await api.generateEpisodeImages(episodeId, true))}>
+            指摘のあるコマを描き直す
+          </button>
+        </div>
+      )}
 
       {done === panels.length && panels.length > 0 && (
         <div className="card accent" style={{ marginTop: 18 }}>

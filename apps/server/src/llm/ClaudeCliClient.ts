@@ -10,6 +10,7 @@ import type { LLMClient, LLMRequest } from './LLMClient.js';
  *   CLAUDE_CLI_MODEL  … モデル指定（省略時は CLI のデフォルト）
  *   CLAUDE_CLI_EFFORT … 推論量（デフォルト: "low"）
  *   LLM_TIMEOUT_MS    … タイムアウト（デフォルト: 300000 = 5分）
+ *   SERIES_FILE_ACCESS… "0" で、連載アーカイブのファイル読み取り（Read/Glob/Grep ツール）を無効化
  */
 export class ClaudeCliClient implements LLMClient {
   readonly name = 'claude-cli';
@@ -19,16 +20,22 @@ export class ClaudeCliClient implements LLMClient {
   private timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 300_000);
 
   async complete(req: LLMRequest): Promise<string> {
+    // 連載アーカイブを cwd にし、読み取り専用ツールだけ許可する（書き込みはアプリ側が担う）。
+    // それ以外はツールなし・1ターンで、推論量を絞って呼ぶ
+    const cwd = req.cwd && process.env.SERIES_FILE_ACCESS !== '0' ? req.cwd : undefined;
     const args = [
       '-p', '--output-format', 'json',
-      '--restricted', '--strict-mcp-config', '--tools', '',
-      '--max-turns', '1', '--permission-prompts', 'none',
+      '--restricted', '--strict-mcp-config',
+      '--permission-prompts', 'none',
       '--effort', this.effort,
+      ...(cwd
+        ? ['--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--max-turns', process.env.CLAUDE_CLI_FILE_TURNS ?? '8']
+        : ['--tools', '', '--max-turns', '1']),
     ];
     if (this.model) args.push('--model', this.model);
     if (req.system) args.push('--append-system-prompt', req.system);
 
-    const stdout = await this.run(args, req.prompt);
+    const stdout = await this.run(args, req.prompt, cwd);
     // --output-format json は {"result": "...", ...} 形式で返す
     try {
       const parsed = JSON.parse(stdout);
@@ -39,11 +46,12 @@ export class ClaudeCliClient implements LLMClient {
     return stdout;
   }
 
-  private run(args: string[], stdin: string): Promise<string> {
+  private run(args: string[], stdin: string, cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.cliPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,
+        cwd,
       });
       let out = '';
       let err = '';

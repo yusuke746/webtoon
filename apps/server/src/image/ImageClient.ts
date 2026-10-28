@@ -2,8 +2,18 @@
  * 画像生成の抽象化層。現在は Replicate 実装がデフォルト。
  * キャラ・背景の一貫性維持のため、パネル単位で LoRA / 参照画像を指定できる。
  */
+/** 設定画のまとまり（キャラ1人 / 背景1つ）。採用画像を先頭に、派生ビューを続ける */
+export interface ReferenceSheet {
+  /** 「主人公」「路地裏」など。プロンプト内で画像の対応を示すのに使う */
+  label: string;
+  kind: 'character' | 'background';
+  urls: string[];
+}
+
 export interface ImageRequest {
   prompt: string;
+  /** 設定画（マルチリファレンス対応モデルにはこれを渡す） */
+  referenceSheets?: ReferenceSheet[];
   /** Replicate モデル（owner/name 形式）。画風設定から渡される */
   model: string;
   /** スタイルLoRA（画風単位） */
@@ -18,6 +28,8 @@ export interface ImageRequest {
   backgroundRefImageUrl?: string | null;
   /** アスペクト比（例: "3:4"） */
   aspectRatio?: string;
+  /** ネガティブプロンプト（対応モデルのみ渡す。flux 系は無視される） */
+  negativePrompt?: string;
   /** モデル固有の追加入力 */
   extraInput?: Record<string, unknown>;
 }
@@ -29,6 +41,8 @@ export interface ImageResult {
   appliedLora?: string | null;
   /** 実際に適用された参照画像 */
   appliedReferenceImage?: string | null;
+  /** マルチリファレンスで渡した参照画像の枚数 */
+  appliedReferenceCount?: number;
 }
 
 export interface ImageClient {

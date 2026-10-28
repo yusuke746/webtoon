@@ -5,9 +5,19 @@ import { api } from '../api';
 import { useAction, useFetch } from '../hooks';
 
 /** カスタマイズ: 画風 / コマ割りルール / ストーリー構成テンプレートの上書き（拡張2） */
+/** モデルが設定画（参照画像）を何枚受け取れるかの表示 */
+function ModelCapsBadge({ model }: { model: string }) {
+  const { data } = useFetch(() => (model ? api.getModelCaps(model) : Promise.resolve(null)), [model]);
+  if (!data) return null;
+  const cls = data.refMode === 'multi' ? 'ok' : data.refMode === 'single' ? 'warn' : 'danger';
+  const label = data.refMode === 'multi' ? `設定画を最大${data.maxRefs}枚渡せる` : data.refMode === 'single' ? '参照は1枚だけ' : '設定画を渡せない';
+  return <span className={`badge ${cls}`} title={data.note}>{data.label}: {label}</span>;
+}
+
 export function SettingsPage() {
   const projectId = Number(useParams().projectId);
   const { data: project, reload } = useFetch(() => api.getProject(projectId), [projectId]);
+  const { data: recommended } = useFetch(() => api.listImageModels(), []);
   const { data: artStyles, reload: reloadStyles } = useFetch(() => api.listArtStyles(projectId), [projectId]);
   const { data: health } = useFetch(() => api.health(), []);
   const { busy, error, run } = useAction();
@@ -143,7 +153,7 @@ export function SettingsPage() {
             <div>
               <strong>{s.name}</strong>{' '}
               {project.artStyleId === s.id && <span className="badge ok">適用中</span>}
-              <div className="muted">モデル: {s.model}{s.loraUrl ? ` ／ LoRA: ${s.loraUrl}` : ''}</div>
+              <div className="muted">モデル: {s.model}{s.loraUrl ? ` ／ LoRA: ${s.loraUrl}` : ''} <ModelCapsBadge model={s.model} /></div>
               <div className="muted">スタイル: {s.stylePrompt || '未設定'}</div>
             </div>
             <div className="row" style={{ flexShrink: 0 }}>
@@ -170,11 +180,16 @@ export function SettingsPage() {
           <h3>新規画風</h3>
           <label>名前</label>
           <input value={newStyle.name ?? ''} onChange={(e) => setNewStyle({ ...newStyle, name: e.target.value })} />
-          <label>Replicate モデル（owner/name）</label>
+          <label>Replicate モデル（owner/name）<span className="hint">／ 設定画を渡せるのはマルチリファレンス対応モデルだけ</span></label>
           <input
-            value={newStyle.model ?? 'black-forest-labs/flux-schnell'}
+            list="recommended-models"
+            value={newStyle.model ?? 'google/nano-banana'}
             onChange={(e) => setNewStyle({ ...newStyle, model: e.target.value })}
           />
+          <datalist id="recommended-models">
+            {recommended?.map((m) => <option key={m.model} value={m.model}>{m.label} — {m.why}</option>)}
+          </datalist>
+          <div className="muted" style={{ marginTop: 4 }}><ModelCapsBadge model={newStyle.model ?? 'google/nano-banana'} /></div>
           <label>スタイルプロンプト（全コマに付与）</label>
           <textarea
             rows={2}

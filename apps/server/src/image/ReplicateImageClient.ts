@@ -1,5 +1,7 @@
 import { resolveConsistencyInputs, type ImageClient, type ImageRequest, type ImageResult } from './ImageClient.js';
 import { localImageToDataUri } from './storage.js';
+import { modelCaps, nearestAspect } from './models.js';
+import { flattenSheets } from './references.js';
 
 /**
  * Replicate API で画像生成する実装。
@@ -16,18 +18,38 @@ export class ReplicateImageClient implements ImageClient {
     if (!this.token) {
       throw new Error('REPLICATE_API_TOKEN が設定されていません');
     }
-    const input: Record<string, unknown> = {
-      prompt: req.prompt,
-      aspect_ratio: req.aspectRatio ?? '3:4',
-      ...req.extraInput,
-    };
+    const caps = modelCaps(req.model);
+    const input: Record<string, unknown> = { ...(caps.defaults ?? {}), prompt: req.prompt };
+    if (caps.aspectInput && process.env.IMAGE_ASPECT_INPUT !== '0') {
+      input[caps.aspectInput] = nearestAspect(req.aspectRatio ?? '3:4', caps.aspectValues);
+    }
+    Object.assign(input, req.extraInput);
+    // negative_prompt は SD 系だけが受け取る（flux 系に渡すと「未知の入力」エラーになる）
+    if (req.negativePrompt && input.negative_prompt === undefined && caps.negative) {
+      input.negative_prompt = req.negativePrompt;
+    }
+
+    // ---- 設定画（マルチリファレンス） ----
+    // 対応モデルには、キャラシート・背景シートを配列で渡し、プロンプト先頭に「どの画像が誰か」を書く
+    let appliedReferenceCount = 0;
+    const refs = flattenSheets(req.referenceSheets ?? [], caps.maxRefs);
+    if (caps.refMode === 'multi' && caps.refInput && refs.length && input[caps.refInput] === undefined) {
+      input[caps.refInput] = await Promise.all(refs.map((r) => (r.url.startsWith('/api/images/') ? localImageToDataUri(r.url) : r.url)));
+      input.prompt = `${refs.map((r, i) => `[image ${i + 1}] = ${r.label}`).join('; ')}. Draw the characters and the place exactly as shown in these reference images. ${req.prompt}`;
+      appliedReferenceCount = refs.length;
+    }
+
     // lora_weights / image は1つずつしか渡せないため、優先順位に従って1つに決める
     const { lora, referenceImage, droppedLoras } = resolveConsistencyInputs(req);
     // 作画モデル自身が学習済みLoRAモデル（owner/model:version）の場合、重みは焼き込み済みなので渡さない。
     // 渡すと「lora_weights は未知の入力」エラーや private モデルの重みDL失敗になる
     const loraIsSelf = !!lora && (lora === req.model || lora.startsWith(`${req.model}:`));
-    if (lora && !loraIsSelf && input.lora_weights === undefined) input.lora_weights = lora;
-    if (referenceImage && input.image === undefined) input.image = referenceImage;
+    if (lora && !loraIsSelf && input.lora_weights === undefined && caps.refMode !== 'multi') input.lora_weights = lora;
+    // 単一参照モデル: 台帳の入力名へ（設定画があればその先頭、無ければ従来の参照画像）
+    if (caps.refMode === 'single' && caps.refInput && input[caps.refInput] === undefined) {
+      const first = refs[0]?.url ?? referenceImage;
+      if (first) { input[caps.refInput] = first; appliedReferenceCount = refs[0] ? 1 : 0; }
+    }
     if (droppedLoras.length > 0 && input.lora_weights === lora) {
       // 黙って捨てると「LoRAを学習したのに効かない」原因が分からなくなるので明示する
       console.warn(
@@ -38,11 +60,10 @@ export class ReplicateImageClient implements ImageClient {
     // クレジット残高が $5 未満だと「毎分6リクエスト・バースト1」に制限されるため、
     // 429 は retry_after（秒）を尊重してリトライする
     // ローカル保存した画像（/api/images/…）は外部から到達できないため data URI にして渡す
-    for (const key of ['image', 'input_image'] as const) {
+    for (const key of ['image', 'input_image', 'image_input', 'input_images'] as const) {
       const v = input[key];
-      if (typeof v === 'string' && v.startsWith('/api/images/')) {
-        input[key] = await localImageToDataUri(v);
-      }
+      if (typeof v === 'string' && v.startsWith('/api/images/')) input[key] = await localImageToDataUri(v);
+      if (Array.isArray(v)) input[key] = await Promise.all(v.map((u) => (typeof u === 'string' && u.startsWith('/api/images/') ? localImageToDataUri(u) : u)));
     }
 
     // "owner/name" は models エンドポイント（公式モデル用）、
@@ -108,6 +129,6 @@ export class ReplicateImageClient implements ImageClient {
     if (typeof url !== 'string') {
       throw new Error(`Replicate の出力形式が想定外です: ${JSON.stringify(output).slice(0, 200)}`);
     }
-    return { url, appliedLora: lora, appliedReferenceImage: referenceImage };
+    return { url, appliedLora: lora, appliedReferenceImage: referenceImage, appliedReferenceCount };
   }
 }

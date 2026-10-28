@@ -53,7 +53,7 @@ export function ProjectPage() {
     },
     {
       label: '一貫性アセット', done: withVisual > 0,
-      detail: `参照画像/LoRA ${withVisual}/${characters?.length ?? 0}人・背景${backgrounds?.length ?? 0}件`,
+      detail: `参照画像 ${withVisual}/${characters?.length ?? 0}人・背景${backgrounds?.length ?? 0}件`,
       to: `/projects/${projectId}/characters`,
     },
   ];

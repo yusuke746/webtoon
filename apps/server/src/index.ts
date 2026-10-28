@@ -10,6 +10,8 @@ import { IMAGES_DIR } from './image/storage.js';
 
 const app = express();
 app.use(cors());
+// 写真の持ち込み（data URL）は大きいので /api/uploads だけ上限を広げる
+app.use('/api/uploads', express.json({ limit: '40mb' }));
 app.use(express.json({ limit: '5mb' }));
 // 生成画像はローカル保存して配信する（Replicate の出力URLは約1時間で失効するため）
 app.use('/api/images', express.static(IMAGES_DIR, { maxAge: '365d', immutable: true }));

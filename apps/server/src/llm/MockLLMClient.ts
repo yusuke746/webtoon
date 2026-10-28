@@ -149,7 +149,125 @@ export class MockLLMClient implements LLMClient {
             'neutral gray background, consistent design, clean lineart',
         });
 
-      case 'summarize':
+      case 'summarize': {
+        const m = req.prompt.match(/第(\d+)話「([^」]*)」/);
+        const n = m?.[1] ?? '?';
+        const title = m?.[2] ?? '';
+        return [
+          `# 第${n}話「${title}」要約（モック）`,
+          '## あらすじ',
+          '主人公は路地裏で倒れている銀髪の少女を見つけ、彼女のペンダントが光るのを目撃する。少女は目を開き「…みつけた」と呟く。',
+          '## 登場人物と変化',
+          '- 主人公: 巻き込まれ型。少女を放っておけず助ける',
+          '- 少女: 無口。主人公に何かを「見つけた」と告げる',
+          '## 新たに判明した設定・事実',
+          '- ペンダントは何らかの反応（光）を示す',
+          '## 伏線の動き',
+          '- 「少女のペンダント」導入',
+          '## 次話への引き',
+          '- 少女の「みつけた」の意味',
+          '## 口調・文体メモ',
+          '- ナレーションは過去形の一人称',
+        ].join('\n');
+      }
+
+      case 'archive':
+        return [
+          '## 現在の状況（最新話時点）',
+          '主人公と少女が出会った直後。組織の影はまだ本人たちに届いていない。',
+          '## 人物の現在地',
+          '- 主人公: 少女を自室へ連れ帰った（第1話末）',
+          '- 少女: 警戒しつつも主人公を信用し始めている',
+          '## 確定した設定・ルール（矛盾させないこと）',
+          '- ペンダントは少女の身に危険が迫ると光る',
+          '## 時系列',
+          '- 第1話: 出会いの朝〜同日夜',
+          '## 未回収の伏線と含み',
+          '- 少女のペンダント（第1話導入・回収予定 第2話以降）',
+          '## 文体・演出の約束事',
+          '- 各話の最終コマは必ず引きで終える',
+        ].join('\n');
+
+      case 'visual_prompt': {
+        const name = req.prompt.match(/## 対象の名前\n(.*)/)?.[1] ?? 'subject';
+        return JSON.stringify({ prompt: `${name}, 16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)` });
+      }
+
+      case 'locations':
+        return JSON.stringify({
+          locations: [
+            { name: '路地裏', description: '商店街の裏手にある細い路地。湿った石畳、積まれた木箱、壁の落書き。昼でも薄暗く、夜は街灯が一本だけ。' },
+            { name: '主人公の自室', description: '六畳の和室。窓際に学習机、壁に本棚、床に布団。夜はスタンドライトだけが点いている。' },
+          ],
+        });
+
+      case 'art_pick': {
+        const ids = [...req.prompt.matchAll(/id=(\d+)/g)].map((m) => Number(m[1]));
+        return JSON.stringify({
+          ranking: ids,
+          reason: '2枚目以降は髪飾りの形が設定と違う。1枚目が設定文に最も近く、表情もニュートラル。（モック）',
+        });
+      }
+
+      case 'art_check': {
+        // 1回目は不一致、2回目以降は合格（描き直しループの動作確認用）
+        const attempt = Number(req.prompt.match(/## 試行\n(\d+)/)?.[1] ?? 1);
+        if (attempt <= 1) {
+          return JSON.stringify({ pass: false, issues: ['髪の色が設定（黒）と違い、茶色に見える', '画面右下に判読できない文字が入っている'], fixPrompt: 'black hair, no text' });
+        }
+        return JSON.stringify({ pass: true, issues: [], fixPrompt: '' });
+      }
+
+      case 'revise_scenes': {
+        const m = req.prompt.match(/## 担当編集からの指示\n([\s\S]*?)\n\n## 出力形式/);
+        const inst = m?.[1]?.trim() ?? '';
+        return JSON.stringify({
+          title: '追跡者',
+          summary: `少女を追う組織の影が迫る。（編集指示「${inst.slice(0, 20)}」を反映・モック）`,
+          scenes: [
+            { title: '不穏', summary: '黒服の男たちが街に現れる。', characters: ['追跡者'], foreshadowRefs: [] },
+            { title: '指示の反映', summary: `${inst || '指示なし'}を踏まえた新しいシーン。`, characters: ['主人公', '少女'], foreshadowRefs: [] },
+            { title: '逃走', summary: '二人は街を出る決意をする。', characters: ['主人公', '少女'], foreshadowRefs: [{ title: '少女のペンダント', action: 'payoff' }] },
+          ],
+        });
+      }
+
+      case 'talk': {
+        const who = req.system ?? '';
+        const m = req.prompt.match(/## 今回の発言\n([\s\S]*?)\n/);
+        const said = m?.[1]?.trim() ?? '';
+        if (who.includes('編集長')) {
+          return JSON.stringify({
+            reply: `「${said}」か。悪くない。第2話の冒頭に入れれば引きが強くなる。構成に反映するなら言ってくれ。（モック）`,
+            action: 'apply_change',
+          });
+        }
+        if (who.includes('マネージャー')) {
+          return JSON.stringify({ reply: '第1話時点では、少女のペンダントは「光る」ことだけが確定しています。由来は未確定です。（モック）', action: null });
+        }
+        return JSON.stringify({ reply: `なるほど、「${said}」ですね。具体案を2つ考えました。1) … 2) …（モック応答）`, action: null });
+      }
+
+      case 'propose': {
+        const review = req.prompt.includes('«気になる点»');
+        const who = req.system ?? '';
+        return JSON.stringify(review ? {
+          reply: `読んだ。${who.includes('編集長') ? '率直に言うぞ。' : '気になった点を挙げますね。'}（モック）`,
+          proposals: [
+            { title: '第1話の引きが弱い', detail: '第1話ラストで少女が逃げるだけでは次を読む理由が薄い。ペンダントが光って追っ手が反応する描写を最後のコマに足すと引きになる。', instruction: '第1話の最終シーンで、ペンダントが光り追っ手がそれに反応する描写を加える。' },
+            { title: '主人公の動機が見えない', detail: '主人公がなぜ少女を助けるのかが第1話で語られていない。祖母との約束を回想1コマで入れる。', instruction: '第1話の路地裏のシーンに、主人公が祖母との約束を思い出す回想を1コマ入れる。' },
+            { title: '追っ手の正体の出し方', detail: '第2話で追っ手を無名のままにすると緊張が続かない。組織名だけ先に出す。', instruction: '第2話で追っ手が所属する組織の名前を一度だけ口にさせる。' },
+          ],
+        } : {
+          reply: `次の展開か。いま考えてるのはこの3つだ。（モック）`,
+          proposals: [
+            { title: 'ライバルの初登場', detail: '第3話で、少女を狙う別勢力の少年を出す。主人公と同い年で、同じペンダントの欠片を持っている。', instruction: '第3話にライバルの少年を初登場させ、同じペンダントの欠片を持たせる。' },
+            { title: '祖母の手がかり', detail: '第3話の終盤で祖母の遺品からペンダントの由来につながる古い写真が見つかる。', instruction: '第3話の終盤で、祖母の遺品からペンダントの由来につながる古い写真が見つかる展開にする。' },
+            { title: '街を出る', detail: '第4話で二人が街を出て、夜行列車で次の町へ。車内で少女が過去の一部を話す。', instruction: '第4話を夜行列車での移動回にし、少女が過去の一部を話す。' },
+          ],
+        });
+      }
+
       default:
         return 'これまでの決定事項: 構成・キャラ設定は生成済み。伏線は1件登録済み。（モック要約）';
     }

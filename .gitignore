@@ -6,3 +6,5 @@ data/images/
 .env.local
 *.log
 .DS_Store
+# 書庫（連載アーカイブ）は実行時データ。Git 管理したい場合は SERIES_DIR を別のリポジトリに向ける
+data/series/

@@ -5,17 +5,26 @@ import {
   rowToForeshadowing, rowToPanel, rowToProject, rowToWorldview,
 } from './db.js';
 import {
-  generateCharacters, generateEpisodeImages, generatePanelImage, generatePanels,
+  generateCharacters, generateCheckedPanelImage, generateEpisodeImages, generatePanels,
   generateStructure, getProject, listCharacters, listEpisodes, listForeshadowings, listPanels,
+  reviseEpisodeScenes,
 } from './engines/story.js';
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
+import { proposeFromNpc, talkToNpc } from './engines/talk.js';
+import { adoptDesign, listDesignProposals, startDesignJob, startLocationsJob } from './engines/design.js';
+import {
+  getArchiveInfo, readArchiveFile, recordDecision, summarizeEpisode, syncArchive,
+  updateBibleNotes, writeArchiveFile,
+} from './engines/archive.js';
 import { getLLMClient } from './llm/index.js';
 import { getImageClient } from './image/index.js';
+import { RECOMMENDED_MODELS, modelCaps } from './image/models.js';
+import { saveDataUrl } from './image/storage.js';
 import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
 import {
-  cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
+  attachPhotos, cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
   listLoraTrainings, listRefImages, selectRefImage, startLoraTrainingJob, startRefImagesJob,
   startRefVariationsJob, updateBackground, validateLoraOptions,
 } from './engines/visual.js';
@@ -97,7 +106,63 @@ router.post('/projects/:id/generate/characters', wrap(async (req, res) => {
 }));
 
 router.post('/episodes/:id/generate/panels', wrap(async (req, res) => {
-  res.json(await generatePanels(id(req)));
+  res.json(await generatePanels(id(req), req.body?.instruction));
+}));
+
+// ---- オフィス用: 会話から頼む作業はジョブにして、NPC が「作業中」になる ----
+
+router.post('/projects/:id/jobs/structure', wrap((req, res) => {
+  const projectId = id(req);
+  const episodeCount = Number(req.body?.episodeCount ?? 1);
+  const instruction = req.body?.instruction ? String(req.body.instruction) : undefined;
+  const job = startJob(
+    { projectId, kind: 'structure', label: `続き ${episodeCount} 話分の構成`, totalSteps: 1, step: '脚本家が構成を書いています…' },
+    async (ctx) => {
+      await generateStructure(projectId, episodeCount, instruction);
+      syncFromEpisodes(projectId);
+      ctx.setResultRef('episodes');
+    },
+  );
+  res.status(202).json(job);
+}));
+
+router.post('/episodes/:id/jobs/revise-scenes', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const instruction = String(req.body?.instruction ?? '').trim();
+  if (!instruction) { res.status(400).json({ error: '指示が必要です' }); return; }
+  const job = startJob(
+    { projectId: episode.projectId, kind: 'structure', label: `第${episode.number}話のシーン構成を直す`, totalSteps: 1, step: '脚本家が書き直しています…' },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await reviseEpisodeScenes(episodeId, instruction);
+      syncFromEpisodes(episode.projectId);
+    },
+  );
+  res.status(202).json(job);
+}));
+
+router.post('/episodes/:id/jobs/panels', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const instruction = req.body?.instruction ? String(req.body.instruction) : undefined;
+  const revising = !!instruction && listPanels(episodeId).length > 0;
+  const job = startJob(
+    {
+      projectId: episode.projectId, kind: 'panels',
+      label: revising ? `第${episode.number}話のネームを直す` : `第${episode.number}話のネーム`,
+      totalSteps: 1, step: revising ? '漫画家がネームを直しています…' : '漫画家がネームを切っています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await generatePanels(episodeId, instruction);
+    },
+  );
+  res.status(202).json(job);
 }));
 
 /** 一括作画はコマ数ぶん時間がかかるためジョブとして実行し、Job を返す */
@@ -106,7 +171,8 @@ router.post('/episodes/:id/generate/images', wrap((req, res) => {
   const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
   if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
   const episode = rowToEpisode(row as any);
-  const pending = listPanels(episodeId).filter((p) => p.status !== 'done');
+  const retryFailed = !!req.body?.retryFailed;
+  const pending = listPanels(episodeId).filter((p) => p.status !== 'done' || (retryFailed && p.checkStatus === 'fail'));
 
   const job = startJob(
     {
@@ -118,16 +184,19 @@ router.post('/episodes/:id/generate/images', wrap((req, res) => {
     },
     async (ctx) => {
       ctx.setResultRef(`episode:${episodeId}`);
+      let lastDone = 0;
       await generateEpisodeImages(episodeId, (done, total, label) => {
-        ctx.advance(`作画中 ${done}/${total}: ${label}`);
-      });
+        // コマが1つ終わるごとに進捗を進め、作画中/チェック中の細かい段階は step だけ更新する
+        if (done > lastDone) { lastDone = done; ctx.advance(`${done}/${total} 完了`); }
+        else ctx.setStep(`${done + 1}/${total}: ${label}`);
+      }, { retryFailed });
     },
   );
   res.status(202).json(job);
 }));
 
 router.post('/panels/:id/generate-image', wrap(async (req, res) => {
-  res.json(await generatePanelImage(id(req)));
+  res.json(await generateCheckedPanelImage(id(req)));
 }));
 
 // ============ エピソード / パネル（手動編集 → 再生成ループ） ============
@@ -293,11 +362,13 @@ router.post('/discussions/:id/intervene', wrap((req, res) => {
 
 router.post('/discussions/:id/decision', wrap(async (req, res) => {
   const { adopted, applyToStructure } = req.body ?? {};
-  const d = setDecision(id(req), !!adopted);
+  const d = setDecision(id(req), !!adopted, !!(adopted && applyToStructure));
   // 採用時、提案内容を変更指示としてそのまま構成へ反映できる
   if (adopted && applyToStructure && d.proposal) {
     await applyChange(d.projectId, d.proposal);
   }
+  // 結論を書庫（bible.md の「会議の決定事項」）に残し、採用なら連載メモにも織り込む
+  recordDecision(d.id);
   res.json(d);
 }));
 
@@ -542,3 +613,127 @@ function copyRowToProject(
   ).run(...values);
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(Number(result.lastInsertRowid)) as any;
 }
+
+// ============ 連載アーカイブ（書庫） ============
+
+router.get('/projects/:id/archive', wrap((req, res) => {
+  res.json(getArchiveInfo(id(req)));
+}));
+
+/** DB の内容をフォルダへ書き出す（LLM は使わない） */
+router.post('/projects/:id/archive/sync', wrap((req, res) => {
+  res.json(syncArchive(id(req)));
+}));
+
+router.get('/projects/:id/archive/file', wrap((req, res) => {
+  const rel = String(req.query.path ?? '');
+  res.json({ path: rel, content: readArchiveFile(id(req), rel) });
+}));
+
+router.put('/projects/:id/archive/file', wrap((req, res) => {
+  const { path: rel, content } = req.body ?? {};
+  writeArchiveFile(id(req), String(rel ?? ''), String(content ?? ''));
+  res.json({ ok: true });
+}));
+
+/** 1話の要約を生成（summary.md）。連載メモは更新しない */
+router.post('/episodes/:id/archive/summarize', wrap(async (req, res) => {
+  res.json({ summary: await summarizeEpisode(id(req)) });
+}));
+
+/** 話を書庫へ登録: 要約生成 + 連載メモ更新（ジョブ化。数十秒〜） */
+router.post('/episodes/:id/archive/register', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const job = startJob(
+    {
+      projectId: episode.projectId,
+      kind: 'archive',
+      label: `第${episode.number}話を書庫へ登録`,
+      totalSteps: 2,
+      step: '要約を作成しています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await summarizeEpisode(episodeId);
+      ctx.advance('連載メモを更新しています…');
+      await updateBibleNotes(episode.projectId);
+    },
+  );
+  res.status(202).json(job);
+}));
+
+/** 連載メモだけを全話の要約から書き直す */
+router.post('/projects/:id/archive/notes', wrap(async (req, res) => {
+  res.json({ notes: await updateBibleNotes(id(req)) });
+}));
+
+// ============ オフィスの NPC との相談 ============
+
+router.post('/projects/:id/talk', wrap(async (req, res) => {
+  const { npcId, message, history, episodeId } = req.body ?? {};
+  if (!npcId || !message) { res.status(400).json({ error: 'npcId と message が必要です' }); return; }
+  res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : [], episodeId ? Number(episodeId) : null));
+}));
+
+router.post('/projects/:id/propose', wrap(async (req, res) => {
+  const { npcId, mode, episodeId } = req.body ?? {};
+  if (!npcId) { res.status(400).json({ error: 'npcId が必要です' }); return; }
+  res.json(await proposeFromNpc(id(req), String(npcId), mode === 'review' ? 'review' : 'next', episodeId ? Number(episodeId) : null));
+}));
+
+// ============ 設定画づくり（キャラ・背景） / 場所の拾い出し ============
+
+const designKind = (v: unknown): 'character' | 'background' => (v === 'background' ? 'background' : 'character');
+
+router.post('/projects/:id/jobs/design', wrap((req, res) => {
+  const ids = Array.isArray(req.body?.ownerIds) ? req.body.ownerIds.map(Number) : undefined;
+  res.status(202).json(startDesignJob(id(req), designKind(req.body?.kind), ids));
+}));
+
+router.get('/projects/:id/design', wrap((req, res) => {
+  res.json(listDesignProposals(id(req), designKind(req.query.kind)));
+}));
+
+router.post('/design/adopt', wrap(async (req, res) => {
+  const { kind, ownerId, refImageId } = req.body ?? {};
+  if (!ownerId || !refImageId) { res.status(400).json({ error: 'ownerId と refImageId が必要です' }); return; }
+  res.json(await adoptDesign(designKind(kind), Number(ownerId), Number(refImageId)));
+}));
+
+router.post('/projects/:id/jobs/locations', wrap((req, res) => {
+  res.status(202).json(startLocationsJob(id(req)));
+}));
+
+// ============ 画像モデルの能力（参照画像をどう受け取るか） ============
+
+router.get('/image/models', wrap((_req, res) => {
+  res.json(RECOMMENDED_MODELS.map((m) => ({ ...m, ...capsOf(m.model) })));
+}));
+
+router.get('/image/model-caps', wrap((req, res) => {
+  res.json(capsOf(String(req.query.model ?? '')));
+}));
+
+function capsOf(model: string) {
+  const c = modelCaps(model);
+  return { model, label: c.label, refMode: c.refMode, maxRefs: c.maxRefs, note: c.note };
+}
+
+// ============ ロケハン写真の持ち込み ============
+
+/** 画像を data URL で受け取りローカル保存する（自分で撮った写真を想定） */
+router.post('/uploads', wrap(async (req, res) => {
+  const { dataUrl, name } = req.body ?? {};
+  if (typeof dataUrl !== 'string') { res.status(400).json({ error: 'dataUrl が必要です' }); return; }
+  const url = await saveDataUrl(dataUrl, `upload-${String(name ?? 'photo').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'photo'}`);
+  res.status(201).json({ url });
+}));
+
+router.post('/backgrounds/:id/photos', wrap((req, res) => {
+  const urls = Array.isArray(req.body?.urls) ? req.body.urls.map(String) : [];
+  if (!urls.length) { res.status(400).json({ error: 'urls が必要です' }); return; }
+  res.status(201).json(attachPhotos(id(req), urls));
+}));

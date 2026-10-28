@@ -11,7 +11,8 @@ import {
 } from '../image/replicateApi.js';
 import { createZip } from '../image/zip.js';
 import { persistImage } from '../image/storage.js';
-import { refImagePrompt } from '../prompts.js';
+import { refImagePrompt, stylizePhotoPrompt } from '../prompts.js';
+import { modelCaps } from '../image/models.js';
 import { startJob } from './jobs.js';
 
 /**
@@ -71,6 +72,15 @@ export function deleteBackground(id: number): void {
 // 参照画像
 // ============================================================
 
+/** 背景に紐付いたロケハン写真（持ち込み）を登録する */
+export function attachPhotos(backgroundId: number, urls: string[]): RefImage[] {
+  const bg = getBackground(backgroundId);
+  if (bg.projectId == null) throw new Error('ライブラリの背景には写真を付けられません');
+  const insert = db.prepare("INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, 'background', ?, ?, 'ロケハン写真（持ち込み）', 'photo')");
+  for (const u of urls) insert.run(bg.projectId, backgroundId, u);
+  return listRefImages('background', backgroundId).filter((r) => r.role === 'photo');
+}
+
 export function listRefImages(kind: RefImageKind, ownerId: number): RefImage[] {
   return (
     db
@@ -116,6 +126,125 @@ function projectArtStyle(projectId: number): ArtStyle | null {
  * 参照画像の候補を count 枚生成するジョブを開始する。
  * promptOverride があれば Claude を通さずそのプロンプトで生成する（微調整の再生成用）。
  */
+/**
+ * 参照画像の候補を count 枚生成して ref_images に保存する（ジョブの中身。設定画づくりからも使う）。
+ * 生成した画像はその場でローカル保存する（Claude が見比べるときに URL が失効していないように）。
+ */
+export async function generateRefImages(
+  projectId: number,
+  kind: RefImageKind,
+  ownerId: number,
+  count: number,
+  promptOverride: string | undefined,
+  onStep: (label: string) => void,
+  options: { fromPhotos?: string[] } = {},
+): Promise<RefImage[]> {
+  const target = loadRefTarget(kind, ownerId);
+  const style = projectArtStyle(projectId);
+
+  // ロケハン写真があれば、写真を画風に様式化して候補にする（構造を保ったまま漫画の背景に）
+  if (options.fromPhotos?.length) {
+    return stylizePhotosToCandidates(projectId, kind, ownerId, target.name, options.fromPhotos, count, style, onStep);
+  }
+
+  let prompt = promptOverride?.trim() ?? '';
+  if (!prompt) {
+    const text = await getLLMClient().complete({
+      task: 'ref_image',
+      prompt: refImagePrompt(kind, target.name, target.description, style?.stylePrompt ?? ''),
+    });
+    prompt = extractJson<{ prompt: string }>(text).prompt;
+  }
+  onStep(`プロンプト完成。画像を生成します（0/${count}）`);
+
+  const image = getImageClient();
+  const model = style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell';
+  const insert = db.prepare(
+    'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
+  );
+  const created: number[] = [];
+
+  // Replicate 側の一時エラーがあるため1枚単位でリトライし、駄目でも残りは続行する
+  let failures = 0;
+  for (let i = 0; i < count; i++) {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const result = await image.generate({
+          prompt: [style?.stylePrompt, prompt, 'no text, no letters, no watermark'].filter(Boolean).join(', '),
+          model,
+          styleLoraUrl: style?.loraUrl,
+          // キャラ設定画は縦長、背景は横長が扱いやすい
+          aspectRatio: kind === 'background' ? '16:9' : '3:4',
+          extraInput: style?.extraInput,
+        });
+        const url = await persistImage(result.url, `ref-${kind}-${ownerId}`);
+        const r = insert.run(projectId, kind, ownerId, url, prompt);
+        created.push(Number(r.lastInsertRowid));
+        break;
+      } catch (e) {
+        if (attempt >= MAX_ATTEMPTS) {
+          console.warn(`[ref-images] ${i + 1}枚目は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
+          failures += 1;
+          break;
+        }
+        console.warn(`[ref-images] ${i + 1}枚目の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
+    onStep(`画像を生成中（${i + 1}/${count}）`);
+  }
+  if (failures >= count) {
+    throw new Error(`参照画像を1枚も生成できませんでした（${count}枚中 ${failures} 失敗）`);
+  }
+  return created.map((id) => getRefImage(id));
+}
+
+/** 写真から背景候補を作る。写真を1枚ずつ参照に渡し、count 枚になるまで順番に様式化する */
+async function stylizePhotosToCandidates(
+  projectId: number,
+  kind: RefImageKind,
+  ownerId: number,
+  name: string,
+  photos: string[],
+  count: number,
+  style: ArtStyle | null,
+  onStep: (label: string) => void,
+): Promise<RefImage[]> {
+  const image = getImageClient();
+  // 画風のモデルが参照画像を受け取れるならそれを、受け取れないなら編集系モデルを使う
+  const styleModel = style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell';
+  const model = process.env.REPLICATE_STYLIZE_MODEL ?? (modelCaps(styleModel).refMode !== 'none' ? styleModel : 'black-forest-labs/flux-kontext-pro');
+  const insert = db.prepare("INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, ?, ?, ?, ?, 'candidate')");
+  const created: number[] = [];
+  let failures = 0;
+  for (let i = 0; i < count; i++) {
+    const photo = photos[i % photos.length];
+    const prompt = stylizePhotoPrompt(name, style?.stylePrompt ?? '');
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const result = await image.generate({
+          prompt, model,
+          referenceSheets: [{ label: `${name} (location photo)`, kind: 'background', urls: [photo] }],
+          aspectRatio: '16:9',
+          extraInput: style?.model === model ? style?.extraInput : undefined,
+        });
+        const url = await persistImage(result.url, `ref-${kind}-${ownerId}`);
+        const r = insert.run(projectId, kind, ownerId, url, `${prompt} [photo: ${photo}]`);
+        created.push(Number(r.lastInsertRowid));
+        break;
+      } catch (e) {
+        if (attempt >= MAX_ATTEMPTS) { console.warn(`[ref-images] 写真 ${i + 1} の様式化に失敗:`, e); failures += 1; break; }
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
+    onStep(`写真を背景に起こしています（${i + 1}/${count}）`);
+  }
+  if (failures >= count) throw new Error('写真から背景を1枚も作れませんでした');
+  return created.map((id) => getRefImage(id));
+}
+
 export function startRefImagesJob(
   projectId: number,
   kind: RefImageKind,
@@ -136,67 +265,12 @@ export function startRefImagesJob(
       step: 'プロンプトを作成中…',
     },
     async (ctx) => {
-      const target = loadRefTarget(kind, ownerId);
-      const style = projectArtStyle(projectId);
-
-      let prompt = promptOverride?.trim() ?? '';
-      if (!prompt) {
-        const text = await getLLMClient().complete({
-          task: 'ref_image',
-          prompt: refImagePrompt(kind, target.name, target.description, style?.stylePrompt ?? ''),
-        });
-        prompt = extractJson<{ prompt: string }>(text).prompt;
-      }
-      ctx.advance(`プロンプト完成。画像を生成します（0/${count}）`);
-
-      const image = getImageClient();
-      const model = style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell';
-      const insert = db.prepare(
-        'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
-      );
-
-      // Replicate 側の一時エラーがあるため1枚単位でリトライし、駄目でも残りは続行する
-      let failures = 0;
-      for (let i = 0; i < count; i++) {
-        const MAX_ATTEMPTS = 3;
-        for (let attempt = 1; ; attempt++) {
-          try {
-            const result = await image.generate({
-              prompt: [style?.stylePrompt, prompt].filter(Boolean).join(', '),
-              model,
-              styleLoraUrl: style?.loraUrl,
-              // キャラ設定画は縦長、背景は横長が扱いやすい
-              aspectRatio: kind === 'background' ? '16:9' : '3:4',
-              extraInput: style?.extraInput,
-            });
-            insert.run(projectId, kind, ownerId, result.url, prompt);
-            break;
-          } catch (e) {
-            if (attempt >= MAX_ATTEMPTS) {
-              console.warn(`[ref-images] ${i + 1}枚目は ${MAX_ATTEMPTS} 回失敗したためスキップします:`, e);
-              failures += 1;
-              break;
-            }
-            console.warn(`[ref-images] ${i + 1}枚目の生成に失敗。リトライします（${attempt}/${MAX_ATTEMPTS}）:`, e);
-            await new Promise((r) => setTimeout(r, 5000 * attempt));
-          }
-        }
-        ctx.advance(`画像を生成中（${i + 1}/${count}）`);
-      }
-      if (failures >= count) {
-        throw new Error(`参照画像を1枚も生成できませんでした（${count}枚中 ${failures} 失敗）`);
-      }
-
+      await generateRefImages(projectId, kind, ownerId, count, promptOverride, (label) => ctx.advance(label));
       ctx.setResultRef(`${kind}:${ownerId}`);
     },
   );
 }
 
-/**
- * 候補の1枚を「正」として採用し、対象の ref_image_url へ書き込む。
- * Replicate の出力URL（replicate.delivery）は約1時間で失効するため、
- * 採用時にローカルへ保存して永続URL（/api/images/…）に差し替える。
- */
 export async function selectRefImage(refImageId: number): Promise<RefImage> {
   const ref = getRefImage(refImageId);
   const meta = REF_TARGET[ref.kind];
@@ -245,6 +319,7 @@ export function startRefVariationsJob(
   kind: RefImageKind,
   ownerId: number,
   count: number,
+  options: { prompts?: string[]; label?: string; jobKind?: 'ref_images' | 'design_background' } = {},
 ): Job {
   const { name } = loadRefTarget(kind, ownerId);
   if (kind === 'style') throw new Error('画風にはバリエーション生成は使えません');
@@ -267,19 +342,20 @@ export function startRefVariationsJob(
   return startJob(
     {
       projectId,
-      kind: 'ref_images',
-      label: `${kindLabel}学習用バリエーション生成: ${name}`,
+      kind: options.jobKind ?? 'ref_images',
+      label: options.label ?? `${kindLabel}学習用バリエーション生成: ${name}`,
       totalSteps: count,
       step: `採用画像を基準に ${count} 枚生成します…`,
     },
     async (ctx) => {
       const image = getImageClient();
       const insert = db.prepare(
-        'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
+        "INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, ?, ?, ?, ?, 'view')",
       );
       let failures = 0;
       for (let i = 0; i < count; i++) {
-        const variation = VARIATION_PROMPTS[i % VARIATION_PROMPTS.length];
+        const pool = options.prompts?.length ? options.prompts : VARIATION_PROMPTS;
+        const variation = pool[i % pool.length];
         const prompt =
           `Redraw the exact same character with identical face, hairstyle, outfit and accessories, ` +
           `but change the pose: ${variation}. Plain white background, ${styleHint}.`;

@@ -100,7 +100,7 @@ function resolvePositions(dialogues: Dialogue[], rules: PanelRules): BubblePosit
   return result;
 }
 
-function PanelContent({ panel, rules }: { panel: Panel; rules: PanelRules }) {
+export function PanelContent({ panel, rules }: { panel: Panel; rules: PanelRules }) {
   const positions = resolvePositions(panel.dialogues, rules);
 
   // コーナー領域ごとにグループ化し、領域内は縦積みで重なりを防ぐ
