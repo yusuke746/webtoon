@@ -35,6 +35,9 @@ const AUTO_START = '<!-- auto:start -->';
 const AUTO_END = '<!-- auto:end -->';
 const NOTES_START = '<!-- notes:start -->';
 const NOTES_END = '<!-- notes:end -->';
+const DECISIONS_START = '<!-- decisions:start -->';
+const DECISIONS_END = '<!-- decisions:end -->';
+const DECISIONS_HEADING = '## 会議の決定事項（AI編集会議で採否の決まった議題）';
 
 // ---------- パス ----------
 
@@ -132,6 +135,11 @@ ${AUTO_END}
 ${NOTES_START}
 （まだありません。話を書庫へ登録すると、連載マネージャーがここを更新します）
 ${NOTES_END}
+
+${DECISIONS_HEADING}
+${DECISIONS_START}
+（まだありません。4F の会議で採否を決めると、ここに結論が残ります）
+${DECISIONS_END}
 
 ## 作者メモ（自由記述・同期で消えません）
 
@@ -259,6 +267,9 @@ export function syncArchive(projectId: number): ArchiveInfo {
   // foreshadow.md
   writeText(path.join(dir, 'foreshadow.md'), renderForeshadow(listForeshadowings(projectId)));
 
+  // bible.md: 会議の決定事項ブロック（採否の決まった議題を DB から起こす）
+  writeText(bibleFile, replaceBlock(readIfExists(bibleFile) ?? BIBLE_TEMPLATE(project.title), DECISIONS_START, DECISIONS_END, renderDecisions(projectId), DECISIONS_HEADING));
+
   // meetings/
   const discussions = (db.prepare('SELECT * FROM discussions WHERE project_id = ? ORDER BY id').all(projectId) as any[])
     .map(rowToDiscussion);
@@ -267,7 +278,7 @@ export function syncArchive(projectId: number): ArchiveInfo {
       .map(rowToDiscussionMessage);
     const body = [
       `# ${d.topic}`,
-      `- 状態: ${d.status}`,
+      `- 状態: ${d.status}${d.status === 'adopted' ? (d.applied ? '（構成に反映済み）' : '（反映なし）') : ''}${d.decidedAt ? ` / 決定 ${d.decidedAt}` : ''}`,
       d.summary ? `- 要約: ${d.summary}` : null,
       d.proposal ? `- 提案:\n${d.proposal}` : null,
       '',
@@ -310,13 +321,54 @@ export function getArchiveInfo(projectId: number): ArchiveInfo {
   });
   const bible = readIfExists(path.join(dir, 'bible.md'));
   const notes = bible ? extractBlock(bible, NOTES_START, NOTES_END) : '';
+  const decisions = bible ? extractBlock(bible, DECISIONS_START, DECISIONS_END) : '';
   return {
     dir,
     exists,
     files: exists ? listFilesRec(dir) : [],
     episodes,
     notes: notes.startsWith('（まだありません') ? '' : notes,
+    decisions: decisions.startsWith('（まだありません') ? '' : decisions,
   };
+}
+
+// ---------- 会議の決定事項 ----------
+
+/** 採否の決まった議題を Markdown にする（決めた順。採用は提案本文まで、不採用は要約だけ） */
+export function renderDecisions(projectId: number): string {
+  const rows = (db.prepare("SELECT * FROM discussions WHERE project_id = ? AND status IN ('adopted', 'rejected') ORDER BY COALESCE(decided_at, created_at), id").all(projectId) as any[])
+    .map(rowToDiscussion)
+    // ネーム生成時の自動批評（ネーム改稿に使う内部的な会議）は方針ではないので載せない
+    .filter((d) => !/ネーム批評（自動）$/.test(d.topic));
+  if (!rows.length) return '（まだありません。4F の会議で採否を決めると、ここに結論が残ります）';
+  return rows.map((d) => {
+    const when = (d.decidedAt ?? d.createdAt).slice(0, 10);
+    // decidedAt が無いのは反映フラグを記録する前の古い会議。反映の有無は不明なので「採用」だけにする
+    const verdict = d.status === 'adopted' ? (!d.decidedAt ? '採用' : d.applied ? '採用・構成に反映済み' : '採用（構成への反映はまだ）') : '不採用';
+    const lines = [`- ${when} 議題「${d.topic}」: **${verdict}**`];
+    if (d.summary) lines.push(`  - 結論: ${d.summary}`);
+    if (d.status === 'adopted' && d.proposal) lines.push(`  - 決定した変更:\n${d.proposal.split('\n').map((l) => `    ${l}`).join('\n')}`);
+    return lines.join('\n');
+  }).join('\n');
+}
+
+/**
+ * 会議の採否が決まったら呼ぶ。bible.md の決定事項を更新し、採用なら連載メモにも織り込む（LLM。失敗しても結論は残る）。
+ * 連載メモの更新は要約済みの話がある場合だけ（無い間は決定事項ブロックだけが根拠になる）。
+ */
+export function recordDecision(discussionId: number): void {
+  const d = db.prepare('SELECT * FROM discussions WHERE id = ?').get(discussionId) as any;
+  if (!d) return;
+  const projectId = Number(d.project_id);
+  try {
+    syncArchive(projectId);
+  } catch (e) {
+    console.warn('[archive] 決定事項の書き出しに失敗しました:', (e as Error).message);
+    return;
+  }
+  if (d.status === 'adopted' && process.env.ARCHIVE_AUTO_REGISTER !== '0' && collectSummaries(projectId).length) {
+    updateBibleNotes(projectId).catch((e) => console.warn('[archive] 決定事項を連載メモへ織り込めませんでした:', (e as Error).message));
+  }
 }
 
 export function readArchiveFile(projectId: number, rel: string): string {
@@ -370,7 +422,7 @@ export async function updateBibleNotes(projectId: number): Promise<string> {
 
   const text = await getLLMClient().complete({
     task: 'archive',
-    prompt: archiveBibleNotesPrompt(project, current, summaries, listForeshadowings(projectId)),
+    prompt: archiveBibleNotesPrompt(project, current, summaries, listForeshadowings(projectId), extractBlock(bible, DECISIONS_START, DECISIONS_END)),
     cwd: dir,
   });
   const notes = text.trim();
@@ -421,14 +473,17 @@ export function buildSeriesContext(projectId: number, opts: SeriesContextOptions
   const authorNotes = bible
     .replace(new RegExp(`${escapeRe(AUTO_START)}[\\s\\S]*?${escapeRe(AUTO_END)}`), '')
     .replace(new RegExp(`${escapeRe(NOTES_START)}[\\s\\S]*?${escapeRe(NOTES_END)}`), '')
+    .replace(new RegExp(`${escapeRe(DECISIONS_START)}[\\s\\S]*?${escapeRe(DECISIONS_END)}`), '')
     .split('\n')
-    .filter((l) => !/^#\s/.test(l) && !/^## (連載メモ|作者メモ)/.test(l))
+    .filter((l) => !/^#\s/.test(l) && !/^## (連載メモ|作者メモ|会議の決定事項)/.test(l))
     .join('\n')
     .trim();
 
   const episodes = listEpisodes(projectId).filter((e) => uptoEpisode === undefined || e.number < uptoEpisode);
   const sections: string[] = [];
   if (notes && !notes.startsWith('（まだありません')) sections.push(`### 連載メモ（人物の現在地・確定設定・未回収の伏線）\n${notes}`);
+  const decisions = extractBlock(bible, DECISIONS_START, DECISIONS_END);
+  if (decisions && !decisions.startsWith('（まだありません')) sections.push(`### 会議の決定事項（編集部で採否の決まった方針。従うこと）\n${decisions}`);
   if (authorNotes) sections.push(`### 作者メモ\n${authorNotes}`);
 
   const summaries = episodes.map((e) => {

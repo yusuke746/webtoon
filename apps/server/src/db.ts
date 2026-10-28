@@ -189,6 +189,8 @@ function addColumnIfMissing(table: string, column: string, definition: string) {
 
 // パネルに背景を紐付ける（作画時に背景の参照画像/LoRAを渡すため）
 addColumnIfMissing('panels', 'background_id', 'INTEGER');
+addColumnIfMissing('discussions', 'applied', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('discussions', 'decided_at', 'TEXT');
 // 作画チェック（Claude が画像を見て設定と照合）
 addColumnIfMissing('panels', 'check_status', "TEXT NOT NULL DEFAULT 'none'");
 addColumnIfMissing('panels', 'check_notes', 'TEXT');
@@ -382,6 +384,8 @@ export function rowToDiscussion(r: Row): Discussion {
     status: r.status,
     summary: r.summary,
     proposal: r.proposal,
+    applied: !!r.applied,
+    decidedAt: r.decided_at ?? null,
     createdAt: r.created_at,
   };
 }

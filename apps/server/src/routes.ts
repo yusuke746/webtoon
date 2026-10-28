@@ -15,7 +15,7 @@ import { applyChange } from './engines/changes.js';
 import { proposeFromNpc, talkToNpc } from './engines/talk.js';
 import { adoptDesign, listDesignProposals, startDesignJob, startLocationsJob } from './engines/design.js';
 import {
-  getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
+  getArchiveInfo, readArchiveFile, recordDecision, summarizeEpisode, syncArchive,
   updateBibleNotes, writeArchiveFile,
 } from './engines/archive.js';
 import { getLLMClient } from './llm/index.js';
@@ -362,11 +362,13 @@ router.post('/discussions/:id/intervene', wrap((req, res) => {
 
 router.post('/discussions/:id/decision', wrap(async (req, res) => {
   const { adopted, applyToStructure } = req.body ?? {};
-  const d = setDecision(id(req), !!adopted);
+  const d = setDecision(id(req), !!adopted, !!(adopted && applyToStructure));
   // 採用時、提案内容を変更指示としてそのまま構成へ反映できる
   if (adopted && applyToStructure && d.proposal) {
     await applyChange(d.projectId, d.proposal);
   }
+  // 結論を書庫（bible.md の「会議の決定事項」）に残し、採用なら連載メモにも織り込む
+  recordDecision(d.id);
   res.json(d);
 }));
 

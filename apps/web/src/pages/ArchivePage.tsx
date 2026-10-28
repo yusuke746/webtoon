@@ -89,6 +89,13 @@ export function ArchivePage() {
       </div>
 
       <div className="card">
+        <div className="card-head"><h3>会議の決定事項</h3></div>
+        {info?.decisions
+          ? <div className="archive-notes">{info.decisions}</div>
+          : <p className="muted">まだありません。4F の会議で採否を決めると、ここに結論が残り、次の話の生成や相談にも渡ります。</p>}
+      </div>
+
+      <div className="card">
         <div className="card-head"><h3>話ごとの登録状況</h3></div>
         {info?.episodes.length ? (
           <table>

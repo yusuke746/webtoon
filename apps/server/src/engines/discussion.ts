@@ -136,9 +136,10 @@ async function buildConsensus(discussionId: number) {
   ).run(out.summary, out.proposal, discussionId);
 }
 
-export function setDecision(discussionId: number, adopted: boolean): Discussion {
-  db.prepare('UPDATE discussions SET status = ? WHERE id = ?').run(
+export function setDecision(discussionId: number, adopted: boolean, applied = false): Discussion {
+  db.prepare("UPDATE discussions SET status = ?, applied = ?, decided_at = datetime('now') WHERE id = ?").run(
     adopted ? 'adopted' : 'rejected',
+    applied ? 1 : 0,
     discussionId,
   );
   return getDiscussion(discussionId);

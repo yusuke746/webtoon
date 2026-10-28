@@ -203,6 +203,10 @@ export interface Discussion {
   summary: string | null;
   /** 採用時に適用する具体的な変更提案 */
   proposal: string | null;
+  /** 採用した提案を構成に反映したか */
+  applied: boolean;
+  /** 採否を決めた日時 */
+  decidedAt: string | null;
   createdAt: string;
 }
 
@@ -400,6 +404,8 @@ export interface ArchiveInfo {
   episodes: ArchiveEpisodeStatus[];
   /** bible.md の「連載メモ」ブロック（未生成なら空文字） */
   notes: string;
+  /** bible.md の「会議の決定事項」ブロック（採否の決まった議題。無ければ空文字） */
+  decisions: string;
 }
 
 // ---------- デフォルト値 ----------

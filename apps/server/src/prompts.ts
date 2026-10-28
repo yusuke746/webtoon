@@ -460,10 +460,12 @@ export function archiveBibleNotesPrompt(
   currentNotes: string,
   summaries: { number: number; title: string; text: string }[],
   foreshadowings: Foreshadowing[],
+  decisions = '',
 ): string {
+  const hasDecisions = !!decisions.trim() && !decisions.trim().startsWith('（まだありません');
   return `あなたは漫画編集部の「連載マネージャー」です。作品「${project.title}」のシリーズバイブルの「連載メモ」を最新の状態に書き直してください。
 連載メモは、次の話を書く作家が最初に読む «現在地の要約» です。古い情報は最新話の内容で上書きし、矛盾があれば最新話を優先して明記してください。
-
+${hasDecisions ? `編集会議で採用された方針は「確定した設定・ルール」または「未回収の伏線と含み」に、どの議題で決まったかが分かる形で必ず織り込んでください。不採用になった案は採らないでください。\n` : ''}
 ## 現在の連載メモ
 ${currentNotes.trim() || '（まだありません）'}
 
@@ -472,7 +474,7 @@ ${summaries.map((s) => `--- 第${s.number}話「${s.title}」 ---\n${s.text}`).j
 
 ## 伏線の登録状況（アプリ側の管理データ）
 ${foreshadowings.length ? foreshadowings.map((f) => `- ${f.title}（${f.status} / 導入 ${f.setupEpisode ?? '未'}話 / 回収予定 ${f.plannedPayoffEpisode ?? '未定'}話）`).join('\n') : 'なし'}
-
+${hasDecisions ? `\n## 編集会議の決定事項（採否の決まった議題）\n${decisions.trim()}\n` : ''}
 ## 出力形式（Markdown のみ。見出しは以下を必ず使う。前置き不要）
 ## 現在の状況（最新話時点）
 ## 人物の現在地（関係・感情・所在）

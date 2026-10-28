@@ -140,6 +140,8 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       const done = a?.episodes.filter((e) => e.hasSummary).length ?? 0;
       const lines = ['書庫番です。これまでの話と設定はすべてここに。'];
       lines.push(a?.exists ? `要約済みは ${done} / ${a.episodes.length} 話。${a.notes ? '連載メモは最新です。' : '連載メモはまだありません。'}` : 'まだ書き出していません。部屋で「同期」を押してください。');
+      const decided = (s?.discussions ?? []).filter((d) => (d.status === 'adopted' || d.status === 'rejected') && !/ネーム批評（自動）$/.test(d.topic)).length;
+      if (decided) lines.push(`会議の決定事項は ${decided} 件、バイブルに残してあります。`);
       lines.push('過去の設定について聞きたければ「相談する」でどうぞ。');
       return lines;
     }
