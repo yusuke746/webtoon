@@ -8,7 +8,7 @@ import {
   panelsPrompt, panelsRevisePrompt, reviseScenesPrompt, structurePrompt,
 } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
-import { listBackgrounds } from './visual.js';
+import { listBackgrounds, listRefImages } from './visual.js';
 import { archiveDir, buildSeriesContext, registerEpisode, syncArchive } from './archive.js';
 import { ART_CHECK_ENABLED, ART_CHECK_MAX_RETRY, NO_TEXT_NEGATIVE, NO_TEXT_PROMPT, checkPanelImage, subjectBlock } from './artcheck.js';
 
@@ -357,12 +357,23 @@ export async function generatePanelImage(panelId: number, fixHint = ''): Promise
 
   // 登場人物・舞台の固定文を先頭に置く（全コマで同じ文言 → 見た目がブレにくい）
   const subjects = await subjectBlock(panelChars, background);
+  // 設定画（採用1枚 + 派生ビュー）をまとめて渡す。対応モデルなら画像で一貫性を保てる
+  const sheetOf = (kind: 'character' | 'background', id: number, name: string, adopted: string | null) => {
+    const views = listRefImages(kind, id).filter((r) => r.role === 'view').map((r) => r.url);
+    const urls = [adopted, ...views].filter((u): u is string => !!u);
+    return urls.length ? [{ label: name, kind, urls }] : [];
+  };
+  const referenceSheets = [
+    ...panelChars.flatMap((c) => sheetOf('character', c.id, c.name, c.refImageUrl)),
+    ...(background ? sheetOf('background', background.id, background.name, background.refImageUrl) : []),
+  ];
 
   db.prepare("UPDATE panels SET status = 'generating', check_status = 'none', check_notes = NULL WHERE id = ?").run(panelId);
   try {
     const result = await getImageClient().generate({
       prompt: [style?.stylePrompt, subjects, panel.imagePrompt, fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', '),
       negativePrompt: NO_TEXT_NEGATIVE,
+      referenceSheets,
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',
       styleLoraUrl: style?.loraUrl,
       characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),
@@ -373,6 +384,9 @@ export async function generatePanelImage(panelId: number, fixHint = ''): Promise
       backgroundRefImageUrl: background?.refImageUrl ?? null,
       extraInput: style?.extraInput,
     });
+    if (referenceSheets.length && !result.appliedReferenceCount) {
+      console.warn(`[image] コマ ${panelId}: 設定画 ${referenceSheets.length} 件があるが、モデル ${style?.model ?? '(既定)'} は参照画像を受け取れない`);
+    }
     // Replicate の出力URLは失効するため、ローカルへ保存して配信URLに差し替える
     const url = await persistImage(result.url, `panel-${panelId}`);
     db.prepare("UPDATE panels SET image_url = ?, status = 'done' WHERE id = ?").run(url, panelId);

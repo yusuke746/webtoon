@@ -171,7 +171,7 @@ const styleResult = db.prepare(
 ).run(
   projectId,
   '夜の情緒モノクロ',
-  'black-forest-labs/flux-schnell',
+  'google/nano-banana',
   'black and white manga style, detailed screentone shading, soft moonlight and deep shadows, nostalgic antique shop atmosphere, delicate ink lines',
   JSON.stringify({}),
 );
@@ -194,7 +194,7 @@ db.prepare(
   'INSERT INTO art_styles (project_id, name, model, style_prompt, extra_input) VALUES (NULL, ?, ?, ?, ?)',
 ).run(
   '水彩カラー少女漫画風',
-  'black-forest-labs/flux-schnell',
+  'google/nano-banana',
   'watercolor shoujo manga style, soft pastel colors, sparkling eyes, flower motifs in background, gentle line art',
   JSON.stringify({}),
 );

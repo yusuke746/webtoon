@@ -103,7 +103,9 @@ export function nextHint(status: OfficeStatus | null, focus: Episode | null): st
       : `第${focus.number}話: 2F 脚本家の構成を確認して 3F 漫画家にネームを頼む`;
     case 'paneled': return missing
       ? `第${focus.number}話: 作画の前に 2F 設定担当へ設定画を頼む（${missing} 人）`
-      : `第${focus.number}話: 3F 漫画家の原稿を確認して作画に入ってもらう`;
+      : status.imageCaps && status.imageCaps.refMode === 'none'
+        ? `第${focus.number}話: いまの画風のモデルは設定画を渡せない。3F 画材担当でモデルを替えてから作画`
+        : `第${focus.number}話: 3F 漫画家の原稿を確認して作画に入ってもらう`;
     case 'rendered': return archived ? `第${focus.number}話は完成。次の話へ（2F 脚本家に続きを頼める）` : `第${focus.number}話: B1 書庫番に登録を頼む`;
   }
   return '';

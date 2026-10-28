@@ -1,4 +1,4 @@
-import type { ArchiveInfo, Character, DesignProposal, Discussion, Episode, ForeshadowWarning, Project } from '@manga/shared';
+import type { ArchiveInfo, Character, DesignProposal, Discussion, Episode, ForeshadowWarning, ImageModelCaps, Project } from '@manga/shared';
 import type { Npc } from './floors';
 
 /**
@@ -19,6 +19,8 @@ export interface OfficeStatus {
   design: DesignProposal[] | null;
   /** 設定画の提案（背景） */
   designBg: DesignProposal[] | null;
+  /** 適用中の画風のモデルが設定画をどう受け取るか */
+  imageCaps: ImageModelCaps | null;
 }
 
 const EP_STATUS: Record<string, string> = {
@@ -102,13 +104,20 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       lines.push(`第${target.number}話「${target.title}」は${EP_STATUS[target.status] ?? target.status}。`);
       if (!s?.artStyleName) lines.push('画風がまだ決まってない。画材担当に相談してくれ。');
       else lines.push(`画風は「${s.artStyleName}」で描く。`);
+      if (s?.imageCaps && s.imageCaps.refMode === 'none') lines.push('ただ、いまのモデルだと設定画を見ながら描けない。画材担当にモデルを替えてもらってくれ。');
       return lines;
     }
 
-    case 'designer':
-      return s?.artStyleName
-        ? [`いまの画風は「${s.artStyleName}」。`, 'コマ割りのルールや構成テンプレートもここで変えられます。']
-        : ['画材担当です。画風がまだ設定されていません。', 'モデルとスタイルプロンプトを決めると、全コマに反映されます。'];
+    case 'designer': {
+      if (!s?.artStyleName) return ['画材担当です。画風がまだ設定されていません。', 'モデルとスタイルプロンプトを決めると、全コマに反映されます。'];
+      const lines = [`いまの画風は「${s.artStyleName}」。`];
+      const c = s.imageCaps;
+      if (c?.refMode === 'multi') lines.push(`モデルは ${c.label}。設定画を最大 ${c.maxRefs} 枚まで作画に渡せます。キャラと背景の一貫性はこれで保ちます。`);
+      else if (c?.refMode === 'single') lines.push(`モデルは ${c.label}。参照画像は1枚しか渡せないので、主役の顔だけ守れます。背景まで揃えるなら nano-banana などに替えてください。`);
+      else if (c) lines.push(`注意: モデル ${c.label} は設定画を受け取れません。固定文と作画チェックだけでは顔がブレます。画風のモデルを google/nano-banana などに替えてください。`);
+      lines.push('コマ割りのルールや構成テンプレートもここで変えられます。');
+      return lines;
+    }
 
     case 'meeting': {
       const pending = (s?.discussions ?? []).filter((d) => d.status === 'awaiting_user').length;

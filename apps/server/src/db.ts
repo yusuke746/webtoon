@@ -197,6 +197,9 @@ addColumnIfMissing('characters', 'visual_prompt', 'TEXT');
 // 設定画の候補に付ける順位と理由（設定担当 = Claude が見比べて決める）
 addColumnIfMissing('ref_images', 'rank', 'INTEGER');
 addColumnIfMissing('ref_images', 'note', 'TEXT');
+addColumnIfMissing('ref_images', 'role', "TEXT NOT NULL DEFAULT 'candidate'");
+// role 列を追加する前に作った派生ビュー（プロンプトで判別）を view に直す（何度実行しても同じ結果）
+db.exec("UPDATE ref_images SET role = 'view' WHERE role = 'candidate' AND prompt LIKE 'Redraw the exact same%'");
 addColumnIfMissing('backgrounds', 'visual_prompt', 'TEXT');
 
 // ---------- 行 → ドメイン型 変換 ----------
@@ -329,6 +332,7 @@ export function rowToRefImage(r: Row): RefImage {
     selected: !!r.selected,
     rank: r.rank ?? null,
     note: r.note ?? null,
+    role: r.role === 'view' ? 'view' : 'candidate',
     createdAt: r.created_at,
   };
 }

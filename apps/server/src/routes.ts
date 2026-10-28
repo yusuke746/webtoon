@@ -20,6 +20,7 @@ import {
 } from './engines/archive.js';
 import { getLLMClient } from './llm/index.js';
 import { getImageClient } from './image/index.js';
+import { RECOMMENDED_MODELS, modelCaps } from './image/models.js';
 import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
 import {
   cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
@@ -696,3 +697,18 @@ router.post('/design/adopt', wrap(async (req, res) => {
 router.post('/projects/:id/jobs/locations', wrap((req, res) => {
   res.status(202).json(startLocationsJob(id(req)));
 }));
+
+// ============ 画像モデルの能力（参照画像をどう受け取るか） ============
+
+router.get('/image/models', wrap((_req, res) => {
+  res.json(RECOMMENDED_MODELS.map((m) => ({ ...m, ...capsOf(m.model) })));
+}));
+
+router.get('/image/model-caps', wrap((req, res) => {
+  res.json(capsOf(String(req.query.model ?? '')));
+}));
+
+function capsOf(model: string) {
+  const c = modelCaps(model);
+  return { model, label: c.label, refMode: c.refMode, maxRefs: c.maxRefs, note: c.note };
+}

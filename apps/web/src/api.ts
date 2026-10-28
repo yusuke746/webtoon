@@ -1,5 +1,5 @@
 import type {
-  ArchiveInfo, DesignKind, DesignProposal,
+  ArchiveInfo, DesignKind, DesignProposal, ImageModelCaps,
   ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
   Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
   Panel, Project, RefImage, RefImageKind, Worldview,
@@ -175,4 +175,8 @@ export const api = {
   adoptDesign: (kind: DesignKind, ownerId: number, refImageId: number) =>
     post<{ ref: RefImage; job: Job | null }>(`/design/adopt`, { kind, ownerId, refImageId }),
   startLocationsJob: (projectId: number) => post<Job>(`/projects/${projectId}/jobs/locations`),
+
+  // 画像モデルの能力（参照画像をどう受け取るか）
+  listImageModels: () => get<(ImageModelCaps & { why: string })[]>('/image/models'),
+  getModelCaps: (model: string) => get<ImageModelCaps>(`/image/model-caps?model=${encodeURIComponent(model)}`),
 };

@@ -289,7 +289,7 @@ export function startRefVariationsJob(
     async (ctx) => {
       const image = getImageClient();
       const insert = db.prepare(
-        'INSERT INTO ref_images (project_id, kind, owner_id, url, prompt) VALUES (?, ?, ?, ?, ?)',
+        "INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, ?, ?, ?, ?, 'view')",
       );
       let failures = 0;
       for (let i = 0; i < count; i++) {

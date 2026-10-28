@@ -41,7 +41,8 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
         api.getDesign(projectId, 'character').catch(() => null), api.getDesign(projectId, 'background').catch(() => null),
       ]);
       const style = styles.find((s) => s.id === project.artStyleId) ?? null;
-      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design, designBg });
+      const imageCaps = style ? await api.getModelCaps(style.model).catch(() => null) : null;
+      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design, designBg, imageCaps });
     } catch {
       setStatus(null);
     }

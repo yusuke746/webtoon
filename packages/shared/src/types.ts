@@ -262,7 +262,18 @@ export interface RefImage {
   rank: number | null;
   /** 順位の理由 */
   note: string | null;
+  /** candidate: 設定画の候補 / view: 採用画像から派生した4枚セット（正面・横顔・全身・表情 など） */
+  role: 'candidate' | 'view';
   createdAt: string;
+}
+
+/** 画像生成モデルが参照画像をどう受け取るか（サーバーの台帳から取得） */
+export interface ImageModelCaps {
+  model: string;
+  label: string;
+  refMode: 'multi' | 'single' | 'none';
+  maxRefs: number;
+  note: string;
 }
 
 export type DesignKind = 'character' | 'background';
