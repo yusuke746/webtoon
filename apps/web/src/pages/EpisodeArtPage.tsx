@@ -94,7 +94,12 @@ export function EpisodeArtPage() {
       </div>
 
       <div className="card">
-        <h3>ページプレビュー</h3>
+        <div className="card-head">
+          <h3>ページプレビュー</h3>
+          <Link to={`/projects/${projectId}/episodes/${episodeId}/read?back=${encodeURIComponent(`/projects/${projectId}/episodes/${episodeId}/art`)}`}>
+            <button className="primary sm">縦読みで読む</button>
+          </Link>
+        </div>
         <PageViewer panels={panels} rules={project.panelRules} />
       </div>
 

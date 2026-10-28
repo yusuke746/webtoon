@@ -170,7 +170,7 @@ function panelRulesSection(project: Project): string {
 - レイアウトは ${rules.gridCols}列 × ${rules.gridRows}行 のグリッド座標（x,y,w,h は整数、x+w <= ${rules.gridCols}、y+h <= ${rules.gridRows}）
 - 同一ページ内でコマ同士を重ねない。隙間なく敷き詰め、読み順が一目で分かる段組みにする
 - コマの大きさに強弱をつける（見せ場は大ゴマ、テンポを出す場面は小さい横長ゴマ）
-- 読み方向: ${rules.readingDirection === 'rtl' ? '右から左（日本式）。同じ段では右のコマが先' : rules.readingDirection === 'ltr' ? '左から右' : '縦スクロール（Webtoon）。コマは上から下へ1列'}
+- 読み方向: ${rules.readingDirection === 'rtl' ? '右から左（日本式）。同じ段では右のコマが先' : rules.readingDirection === 'ltr' ? '左から右' : `縦スクロール（Webtoon）。コマは上から下へ1列。必ず x=0, w=${rules.gridCols} にし、h で縦の長さを決める（見せ場は h=${rules.gridRows} の縦長大ゴマ、テンポを出す場面は h=1〜2 の横長ゴマ）。page は「画面」の区切りとして使い、場面転換で page を進める`}
 - 目安ページ数: ${project.storyTemplate.pagesPerEpisode}ページ
 - 追加ルール: ${rules.customRules || 'なし'}
 
@@ -178,7 +178,7 @@ function panelRulesSection(project: Project): string {
 - 1コマのセリフは最大3つ。1つのセリフは40字以内（長い場合はコマを分ける）
 - 各セリフに position を必ず指定する: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "middle-left" | "middle-right"
 - 同一コマ内で同じ position を2回使わない（吹き出しが重なるため）
-- 読み方向が${rules.readingDirection === 'ltr' ? '左→右なので、先に読むセリフほど左・上に置く' : '右→左なので、先に読むセリフほど右・上に置く'}
+- 読み方向が${rules.readingDirection === 'ltr' ? '左→右なので、先に読むセリフほど左・上に置く' : rules.readingDirection === 'vertical' ? '上→下の縦読みなので、先に読むセリフほど上に置く（top-* → middle-* → bottom-*）' : '右→左なので、先に読むセリフほど右・上に置く'}
 - 人物の顔や重要な被写体はコマ中央に置く想定のため、position は端に配置する`;
 }
 

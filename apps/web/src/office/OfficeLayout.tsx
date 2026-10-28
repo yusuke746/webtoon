@@ -269,6 +269,13 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
 
     if (key === 'close') { setTalk(null); return; }
     if (key === 'enter') { setTalk(null); navigate(routeFor(npc)); return; }
+    if (key === 'read') {
+      const epId = talk.npc.id === 'artist' && focus ? focus.id : focusId;
+      if (!epId) return;
+      setTalk(null);
+      navigate(`/projects/${projectId}/episodes/${epId}/read?back=${encodeURIComponent(basePath)}`);
+      return;
+    }
     if (key === 'chat') { openInput('chat'); return; }
     if (key.startsWith('propose:') && projectId) {
       const mode = key.split(':')[1] === 'review' ? 'review' : 'next';
@@ -339,7 +346,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     }
     if (key === 'panels:show' && focus) {
       const choices: Choice[] = focus.status === 'rendered'
-        ? [{ key: 'episode:next', label: '次の話へ' }, { key: 'panels:revise', label: 'ネームから直したい' }, { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' }]
+        ? [{ key: 'read', label: '縦読みで読む' }, { key: 'episode:next', label: '次の話へ' }, { key: 'panels:revise', label: 'ネームから直したい' }, { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' }]
         : [{ key: 'images:generate', label: 'OK、作画に入ってくれ' }, { key: 'panels:revise', label: 'ネームを直してほしい' }, { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' }];
       await showDeliver(focus.status === 'rendered' ? 'images' : 'panels', focus, choices);
       return;

@@ -14,6 +14,7 @@ import { DiscussionsPage } from './pages/DiscussionsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ArchivePage } from './pages/ArchivePage';
+import { ReaderPage } from './pages/ReaderPage';
 import { OfficeLayout } from './office/OfficeLayout';
 
 /**
@@ -123,6 +124,8 @@ export function App() {
       <Route path="/projects/:projectId/episodes/:episodeId/scenes" element={page(<EpisodeScenesPage />)} />
       <Route path="/projects/:projectId/episodes/:episodeId/panels" element={page(<EpisodePanelsPage />)} />
       <Route path="/projects/:projectId/episodes/:episodeId/art" element={page(<EpisodeArtPage />)} />
+      {/* 縦読みリーダー（全画面。オフィス／サイドバーの外） */}
+      <Route path="/projects/:projectId/episodes/:episodeId/read" element={<ReaderPage />} />
 
       <Route path="*" element={page(
         <div className="empty-state">

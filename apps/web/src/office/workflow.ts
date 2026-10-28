@@ -174,7 +174,7 @@ export function planTalk(
       case 'images':
         return {
           lines: [`第${ep?.number ?? '?'}話、作画が終わりました。`],
-          choices: [{ key: 'episode:next', label: 'お疲れさま。次の話へ' }, { key: 'panels:revise', label: 'ネームから直したい' }, enter('書類で見る'), close],
+          choices: [{ key: 'read', label: '縦読みで読む' }, { key: 'episode:next', label: 'お疲れさま。次の話へ' }, { key: 'panels:revise', label: 'ネームから直したい' }, enter('書類で見る'), close],
           deliver: delivery,
         };
       case 'archive':
@@ -240,7 +240,7 @@ export function planTalk(
         );
         if (miss.length) baseLines = [...baseLines, `${miss.map((c) => c.name).join('・')}の設定画がまだない。先に2Fの設定担当に頼んでくると顔が安定するよ。`];
       } else {
-        choices.push({ key: 'panels:show', label: `${f}の原稿を見せて（作画済み）` }, { key: 'episode:next', label: '次の話へ' });
+        choices.push({ key: 'panels:show', label: `${f}の原稿を見せて（作画済み）` }, { key: 'read', label: `${f}を縦読みで読む` }, { key: 'episode:next', label: '次の話へ' });
       }
       choices.push({ key: 'pick:menu', label: '別の話にする' });
       return { lines: baseLines, choices: [...choices, chat, enter('書類で見る'), close] };

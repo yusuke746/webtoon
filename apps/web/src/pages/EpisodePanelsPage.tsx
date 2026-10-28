@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Background, Dialogue, Panel } from '@manga/shared';
 import { api } from '../api';
 import { useAction, useFetch } from '../hooks';
@@ -63,14 +63,19 @@ export function EpisodePanelsPage() {
           <div className="card">
             <div className="card-head">
               <h3>ページプレビュー</h3>
-              <button className="ghost sm" disabled={busy !== null}
-                onClick={() => run('ネームの再生成', async () => {
-                  await api.generatePanels(episodeId);
-                  reload();
-                })}
-              >
-                ネームを再生成
-              </button>
+              <div className="row tight">
+                <Link to={`/projects/${projectId}/episodes/${episodeId}/read?back=${encodeURIComponent(`/projects/${projectId}/episodes/${episodeId}/panels`)}`}>
+                  <button className="sm">縦読みで読む</button>
+                </Link>
+                <button className="ghost sm" disabled={busy !== null}
+                  onClick={() => run('ネームの再生成', async () => {
+                    await api.generatePanels(episodeId);
+                    reload();
+                  })}
+                >
+                  ネームを再生成
+                </button>
+              </div>
             </div>
             <PageViewer panels={episode.panels} rules={project.panelRules} />
           </div>

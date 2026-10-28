@@ -888,3 +888,61 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .talk.meeting .talk-name.role-reader { background: linear-gradient(#b8762a, #7a4a10); }
 .talk.meeting .talk-name.role-user { background: linear-gradient(#3a3a4a, #1f1f2a); }
 .talk-hint { margin-top: 6px; font-size: 11px; color: #c8d0ff; }
+
+/* ============================================================
+   縦読み（Webtoon）リーダー
+   ============================================================ */
+.reader { position: fixed; inset: 0; background: #0f0e12; color: #e9e6f0; z-index: 100; display: flex; flex-direction: column; }
+.reader-bar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  background: linear-gradient(rgba(15,14,18,.96), rgba(15,14,18,.75)); transition: opacity .25s, transform .25s;
+}
+.reader-bar.hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.reader-title { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reader-title span { margin-left: 8px; color: #cfc9dc; }
+.reader-count { font-size: 11px; color: #9a93ad; }
+.reader-modes { display: flex; gap: 4px; }
+.reader-btn {
+  background: #221d30; color: #e9e6f0; border: 1px solid #3a3350; border-radius: 6px; padding: 5px 10px; font-size: 12px;
+  cursor: pointer; font-family: inherit;
+}
+.reader-btn:hover:not(:disabled) { border-color: var(--accent); color: #fff; }
+.reader-btn.active, .reader-btn.active:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.reader .bubble { color: #111; text-shadow: none; }
+.reader-progress { position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; background: rgba(255,255,255,.08); }
+.reader-progress div { height: 100%; background: var(--accent); transition: width .15s; }
+.reader-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: smooth; }
+.reader-empty { margin: 120px auto; text-align: center; color: #9a93ad; }
+.reader-empty a { color: #fff; }
+
+.strip { width: min(720px, 100%); margin: 0 auto; padding: 60px 0 80px; }
+.strip-head { text-align: center; padding: 48px 16px 56px; }
+.strip-ep { font-size: 13px; letter-spacing: .3em; color: #9a93ad; }
+.strip-ttl { font-size: 26px; font-weight: 800; margin-top: 6px; }
+.strip-panel {
+  position: relative; width: 100%; background: #fafafa; overflow: hidden; margin: 0 0 28px; border: 0;
+}
+.strip-panel.break { margin-top: 110px; }
+.strip-panel.undrawn { background: #1a1822; border: 1px dashed #3a3350; }
+.strip-panel.undrawn .desc { color: #9a93ad; font-size: 13px; }
+.strip-panel img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.strip-panel .bubble { font-size: 14px; padding: 6px 12px; border-radius: 16px; max-width: 100%; }
+.strip-panel .bubble.sfx { font-size: 18px; }
+.strip-panel .bubble-zone { max-width: 60%; gap: 6px; }
+.strip-panel .bubble-zone[style*="left: 4px"] { left: 12px !important; }
+.strip-panel .bubble-zone[style*="right: 4px"] { right: 12px !important; }
+.strip-end { text-align: center; padding: 60px 16px 40px; }
+.reader-link {
+  display: inline-block; background: #221d30; color: #e9e6f0; border: 1px solid #3a3350; border-radius: 8px; padding: 8px 14px;
+  text-decoration: none; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.reader-link.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.reader-pages { width: min(560px, 100%); margin: 0 auto; padding: 64px 12px 80px; }
+.reader-pages .row { flex-direction: column; align-items: center; }
+.reader-pages .page-sheet { max-width: 100%; }
+.reader-pages .muted { color: #9a93ad; }
+@media (max-width: 760px) {
+  .strip-panel { margin-bottom: 16px; }
+  .strip-panel.break { margin-top: 64px; }
+  .strip-panel .bubble { font-size: 12px; }
+}
