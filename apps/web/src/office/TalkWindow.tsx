@@ -53,6 +53,8 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.tagName === 'LABEL') && e.key !== 'Escape') return;
       if (talk.phase === 'input') {
         if (e.key === 'Escape') { e.preventDefault(); onCancelInput(); }
         return;

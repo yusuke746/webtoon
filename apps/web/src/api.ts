@@ -179,4 +179,16 @@ export const api = {
   // 画像モデルの能力（参照画像をどう受け取るか）
   listImageModels: () => get<(ImageModelCaps & { why: string })[]>('/image/models'),
   getModelCaps: (model: string) => get<ImageModelCaps>(`/image/model-caps?model=${encodeURIComponent(model)}`),
+
+  // ロケハン写真の持ち込み
+  uploadImage: async (file: File) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('ファイルを読めませんでした'));
+      r.readAsDataURL(file);
+    });
+    return post<{ url: string }>('/uploads', { dataUrl, name: file.name.replace(/\.[^.]+$/, '') });
+  },
+  attachBackgroundPhotos: (backgroundId: number, urls: string[]) => post<RefImage[]>(`/backgrounds/${backgroundId}/photos`, { urls }),
 };

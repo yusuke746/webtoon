@@ -92,7 +92,7 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       if (!bgs.length) return ['ロケハン担当です。まだ場所の登録がありません。', '構成とネームから、繰り返し出てくる場所を拾い出せます。'];
       const lines = [`登録済みの場所は ${bgs.length} 件。${bgs.slice(0, 3).map((b) => b.name).join('・')}${bgs.length > 3 ? ' ほか' : ''}。`];
       if (pending) lines.push(`背景の設定画の候補が ${pending} 件できています。おすすめを選んであります。`);
-      else if (noRef) lines.push(`設定画がない場所が ${noRef} 件。頼んでもらえれば候補を描いて選びます。`);
+      else if (noRef) lines.push(`設定画がない場所が ${noRef} 件。頼んでもらえれば候補を描いて選びます。自分で撮った写真があれば、そこから起こすこともできます。`);
       else lines.push('全部の場所に設定画があります。同じ名前の場所はネーム生成時にコマへ自動で割り当てられます。');
       return lines;
     }

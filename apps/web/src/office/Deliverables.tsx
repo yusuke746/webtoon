@@ -1,4 +1,6 @@
-import type { DesignProposal, Episode, PanelRules } from '@manga/shared';
+import { useCallback, useEffect, useState } from 'react';
+import type { DesignProposal, Episode, PanelRules, RefImage } from '@manga/shared';
+import { api } from '../api';
 import { FallbackImage } from '../components/PageViewer';
 import type { EpisodeWithPanels } from '../api';
 import { PageViewer } from '../components/PageViewer';
@@ -130,6 +132,70 @@ export function LocationsView({ backgrounds }: { backgrounds: { id: number; name
           <li key={b.id}><strong>{b.name}</strong>{b.description ? ` — ${b.description}` : ''} <span className="muted">{b.refImageUrl ? '（設定画あり）' : '（設定画なし）'}</span></li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+/**
+ * ロケハン写真の持ち込み。自分で撮った写真を場所に添付する（会話ウィンドウ内で操作する成果物）。
+ * 添付した写真は「背景の設定画づくり」で、構図を保ったまま画風に合わせて背景に起こされる。
+ */
+export function PhotosView({ backgrounds, onChanged }: {
+  backgrounds: { id: number; name: string; refImageUrl: string | null }[];
+  onChanged?: (backgroundId: number, photoCount: number, adopted: boolean) => void;
+}) {
+  const [bgId, setBgId] = useState<number>(backgrounds.find((b) => !b.refImageUrl)?.id ?? backgrounds[0]?.id ?? 0);
+  const [photos, setPhotos] = useState<RefImage[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const bg = backgrounds.find((b) => b.id === bgId) ?? null;
+
+  const load = useCallback(async (id: number) => {
+    const list = (await api.listRefImages('background', id)).filter((r) => r.role === 'photo');
+    setPhotos(list);
+    const b = backgrounds.find((x) => x.id === id);
+    onChanged?.(id, list.length, !!b?.refImageUrl);
+  }, [backgrounds, onChanged]);
+  useEffect(() => { if (bgId) load(bgId).catch((e: Error) => setError(e.message)); }, [bgId, load]);
+
+  const onFiles = async (files: FileList | null) => {
+    const list = Array.from(files ?? []); // FileList は input のリセットで空になるので先に写す
+    if (!list.length || !bgId) return;
+    setError(null);
+    try {
+      const urls: string[] = [];
+      for (let i = 0; i < list.length; i++) {
+        setBusy(`${i + 1} / ${list.length} 枚目を受け取っています…`);
+        urls.push((await api.uploadImage(list[i])).url);
+      }
+      await api.attachBackgroundPhotos(bgId, urls);
+      await load(bgId);
+    } catch (e) { setError((e as Error).message); } finally { setBusy(null); }
+  };
+
+  if (!backgrounds.length) return <div className="muted">場所がまだ登録されていません。先に「構成とネームから場所を拾い出してもらう」か、背景の一覧で登録してください。</div>;
+  return (
+    <div className="photos-view">
+      <h4>ロケハン写真を渡す</h4>
+      <p className="muted">自分で撮った写真を場所に添付します。設定画づくりのときに、写真の構図・建物の配置を保ったまま画風に合わせた背景に起こします。<br />
+        ※ ストリートビューなど他サービスの画像は規約上使えません。自分で撮影した写真を使ってください。</p>
+      <div className="row" style={{ marginBottom: 8 }}>
+        <select value={bgId} onChange={(e) => setBgId(Number(e.target.value))} aria-label="場所" disabled={!!busy}>
+          {backgrounds.map((b) => <option key={b.id} value={b.id}>{b.name}{b.refImageUrl ? '（設定画あり）' : ''}</option>)}
+        </select>
+        <label className={`file-btn ${busy ? 'disabled' : ''}`}>
+          写真を選ぶ
+          <input type="file" accept="image/*" multiple disabled={!!busy} onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />
+        </label>
+      </div>
+      {busy && <div className="muted">{busy}</div>}
+      {error && <div className="error-box">{error}</div>}
+      {bg?.refImageUrl && <div className="info-box">「{bg.name}」はもう設定画が決まっています。写真は参考資料として保管します。</div>}
+      {photos.length ? (
+        <div className="photo-strip">
+          {photos.map((p) => <FallbackImage key={p.id} src={p.url} alt={`${bg?.name ?? ''} の写真`} />)}
+        </div>
+      ) : <div className="muted">{bg ? `「${bg.name}」の写真はまだありません。` : ''}</div>}
     </div>
   );
 }

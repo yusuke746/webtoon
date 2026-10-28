@@ -58,3 +58,13 @@ export async function persistImage(url: string, key: string): Promise<string> {
     return url;
   }
 }
+
+/** data URL（持ち込み写真）をローカルに保存し、配信用パスを返す */
+export async function saveDataUrl(dataUrl: string, key: string): Promise<string> {
+  const m = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!m) throw new Error('画像の data URL ではありません');
+  const ext = EXT_BY_TYPE[m[1].toLowerCase()] ?? '.jpg';
+  const filename = `${key}-${Date.now()}${ext}`;
+  await writeFile(path.join(IMAGES_DIR, filename), Buffer.from(m[2], 'base64'));
+  return `/api/images/${filename}`;
+}

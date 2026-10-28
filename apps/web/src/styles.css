@@ -868,3 +868,11 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .design-grid.background .design-card { width: 360px; }
 .design-grid.background .design-thumbs img, .design-grid.background .design-thumbs .img-fallback { width: 56px; height: 32px; }
 .design-alt.background .design-alt-item img, .design-alt.background .design-alt-item .img-fallback { width: 200px; height: 112px; }
+
+/* ロケハン写真の持ち込み */
+.file-btn { position: relative; display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); cursor: pointer; font-size: 13px; }
+.file-btn input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.file-btn.disabled { opacity: .5; pointer-events: none; }
+.photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.photo-strip img, .photo-strip .img-fallback { width: 120px; height: 68px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.gallery-item .flag.photo { background: var(--panel); color: var(--sub); border: 1px solid var(--line); }

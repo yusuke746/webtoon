@@ -332,7 +332,7 @@ export function rowToRefImage(r: Row): RefImage {
     selected: !!r.selected,
     rank: r.rank ?? null,
     note: r.note ?? null,
-    role: r.role === 'view' ? 'view' : 'candidate',
+    role: r.role === 'view' ? 'view' : r.role === 'photo' ? 'photo' : 'candidate',
     createdAt: r.created_at,
   };
 }

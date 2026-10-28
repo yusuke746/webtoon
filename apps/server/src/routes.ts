@@ -21,9 +21,10 @@ import {
 import { getLLMClient } from './llm/index.js';
 import { getImageClient } from './image/index.js';
 import { RECOMMENDED_MODELS, modelCaps } from './image/models.js';
+import { saveDataUrl } from './image/storage.js';
 import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
 import {
-  cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
+  attachPhotos, cancelLoraTraining, createBackground, deleteBackground, deleteRefImage, listBackgrounds,
   listLoraTrainings, listRefImages, selectRefImage, startLoraTrainingJob, startRefImagesJob,
   startRefVariationsJob, updateBackground, validateLoraOptions,
 } from './engines/visual.js';
@@ -712,3 +713,19 @@ function capsOf(model: string) {
   const c = modelCaps(model);
   return { model, label: c.label, refMode: c.refMode, maxRefs: c.maxRefs, note: c.note };
 }
+
+// ============ ロケハン写真の持ち込み ============
+
+/** 画像を data URL で受け取りローカル保存する（自分で撮った写真を想定） */
+router.post('/uploads', wrap(async (req, res) => {
+  const { dataUrl, name } = req.body ?? {};
+  if (typeof dataUrl !== 'string') { res.status(400).json({ error: 'dataUrl が必要です' }); return; }
+  const url = await saveDataUrl(dataUrl, `upload-${String(name ?? 'photo').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20) || 'photo'}`);
+  res.status(201).json({ url });
+}));
+
+router.post('/backgrounds/:id/photos', wrap((req, res) => {
+  const urls = Array.isArray(req.body?.urls) ? req.body.urls.map(String) : [];
+  if (!urls.length) { res.status(400).json({ error: 'urls が必要です' }); return; }
+  res.status(201).json(attachPhotos(id(req), urls));
+}));

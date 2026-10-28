@@ -10,7 +10,7 @@ import {
   designChoices, inputHintFor, mainCharacters, nextHint, pendingProposals, pickChoices, planTalk, questRows,
   type Choice, type Delivery, type Requested,
 } from './workflow';
-import { DesignAltView, DesignView, EpisodesView, LocationsView, PagesView, ScenesView } from './Deliverables';
+import { DesignAltView, DesignView, EpisodesView, LocationsView, PagesView, PhotosView, ScenesView } from './Deliverables';
 
 /**
  * RPG 風オフィス = 制作工程そのもの。
@@ -330,13 +330,27 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
+    if (key === 'photos:upload' && projectId) {
+      const bgs = status?.backgrounds ?? [];
+      const choicesFor = (bgId: number | null, n: number, adopted: boolean): Choice[] => [
+        ...(bgId && n && !adopted ? [{ key: `design:start:background:${bgId}`, label: 'この写真から背景の設定画を起こしてもらう' }] : []),
+        { key: 'close', label: 'また今度' },
+      ];
+      setTalk((t) => t && {
+        ...t, phase: 'deliver', reply: null, choices: choicesFor(null, 0, false),
+        content: <PhotosView backgrounds={bgs} onChanged={(bgId, n, adopted) => setTalk((t2) => t2 && { ...t2, choices: choicesFor(bgId, n, adopted) })} />,
+      });
+      return;
+    }
     if (key.startsWith('design:start:') && projectId) {
-      const dk = key.split(':')[2] as DesignKind;
+      const [, , dkS, oidS] = key.split(':');
+      const dk = dkS as DesignKind;
+      const fromPhotos = dk === 'background' && !!oidS;
       try {
-        const job = await api.startDesignJob(projectId, dk);
+        const job = await api.startDesignJob(projectId, dk, oidS ? [Number(oidS)] : undefined);
         track(job, { npcId: dk === 'character' ? 'chara' : 'location', kind: 'design', designKind: dk, label: job.label });
         sayAndClose([
-          dk === 'character' ? '承知しました。候補を数枚ずつ描いて、設定に一番近いものを選んでおきます。' : 'わかりました。場所ごとに候補を描いて、説明に一番近いものを選んでおきます。',
+          fromPhotos ? 'わかりました。写真の構図を保ったまま、画風に合わせて背景に起こします。' : dk === 'character' ? '承知しました。候補を数枚ずつ描いて、設定に一番近いものを選んでおきます。' : 'わかりました。場所ごとに候補を描いて、説明に一番近いものを選んでおきます。',
           'できたら呼びに行きます。',
         ]);
       } catch (e) { fail(e as Error); }

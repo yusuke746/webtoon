@@ -615,6 +615,7 @@ export function artPickPrompt(
   kind: 'character' | 'background',
   owner: { name: string; description: string; visualPrompt: string | null },
   candidates: { id: number; file: string }[],
+  photos: string[] = [],
 ): string {
   const what = kind === 'character' ? `キャラクター「${owner.name}」の設定画` : `場所「${owner.name}」の背景設定画`;
   const criteria = kind === 'character'
@@ -632,13 +633,23 @@ ${owner.visualPrompt ? `- 固定文: ${owner.visualPrompt}\n` : ''}- 説明: ${o
 
 ## 候補
 ${candidates.map((c, i) => `- 候補${i + 1} id=${c.id}: ${c.file}`).join('\n')}
-
+${photos.length ? `\n## 元になったロケハン写真（候補はこれを漫画風に起こしたもの。構造が写真と一致しているかも見る）\n${photos.map((f) => `- ${f}`).join('\n')}\n` : ''}
 ## 判定基準（優先順）
-${criteria}
+${criteria}${photos.length ? '\n4. 元の写真の構図・建物・家具の配置が保たれている（別の場所になっていない）' : ''}
 
 ## 出力形式（JSON）
 { "ranking": [最も良い候補のidから順に全候補のid], "reason": "1位を選んだ理由と、他を下げた理由（日本語・簡潔）" }
 出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
+}
+
+/** ロケハン写真を漫画の背景に様式化する（画像生成モデルへの英語プロンプト） */
+export function stylizePhotoPrompt(name: string, stylePrompt: string): string {
+  return [
+    `Redraw the reference photo as a manga background illustration of "${name}".`,
+    'Keep the exact layout, perspective, architecture, furniture and lighting of the photo.',
+    'Remove all people, vehicles, signage text and logos. No text, no letters, no watermark.',
+    stylePrompt || 'black and white manga style, clean ink lines, screentone shading',
+  ].join(' ');
 }
 
 /** 構成・ネームから繰り返し使う場所を拾い出す（ロケハン担当） */

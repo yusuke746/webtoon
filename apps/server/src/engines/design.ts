@@ -66,8 +66,13 @@ function getOwner(kind: DesignKind, id: number): Owner | null {
 export async function rankCandidates(kind: DesignKind, ownerId: number, candidateIds?: number[]): Promise<RefImage[]> {
   const owner = getOwner(kind, ownerId);
   if (!owner) throw new Error(`対象が見つかりません: ${kind} ${ownerId}`);
-  let candidates = listRefImages(kind, ownerId).filter((r) => !r.selected);
+  let candidates = listRefImages(kind, ownerId).filter((r) => !r.selected && r.role === 'candidate');
   if (candidateIds?.length) candidates = candidates.filter((r) => candidateIds.includes(r.id));
+  const photos = listRefImages(kind, ownerId)
+    .filter((r) => r.role === 'photo')
+    .map((r) => localImageFile(r.url))
+    .filter((f): f is string => !!f && existsSync(f))
+    .map((f) => path.relative(IMAGES_DIR, f));
   const viewable = candidates
     .map((r) => ({ r, file: localImageFile(r.url) }))
     .filter((x): x is { r: RefImage; file: string } => !!x.file && existsSync(x.file));
@@ -81,7 +86,7 @@ export async function rankCandidates(kind: DesignKind, ownerId: number, candidat
       system: kind === 'character'
         ? 'あなたは漫画編集部の設定担当（キャラクターデザイン監修）です。画像を実際に Read で開いて見比べ、設定への忠実さで順位を付けます。'
         : 'あなたは漫画編集部のロケハン担当（背景設定の監修）です。画像を実際に Read で開いて見比べ、場所の設定への忠実さと «以後の基準にしやすさ» で順位を付けます。',
-      prompt: artPickPrompt(kind, owner, viewable.map((x) => ({ id: x.r.id, file: path.relative(IMAGES_DIR, x.file) }))),
+      prompt: artPickPrompt(kind, owner, viewable.map((x) => ({ id: x.r.id, file: path.relative(IMAGES_DIR, x.file) })), photos),
       cwd: IMAGES_DIR,
     });
     const out = extractJson<{ ranking?: number[]; reason?: string }>(text);
@@ -113,8 +118,10 @@ export function startDesignJob(projectId: number, kind: DesignKind, ownerIds?: n
     async (ctx) => {
       ctx.setResultRef(`design:${kind}`);
       for (const o of targets) {
-        ctx.setStep(`${o.name} の候補を描いています…`);
-        const made = await generateRefImages(projectId, kind, o.id, DESIGN_CANDIDATES, undefined, () => undefined);
+        // 背景にロケハン写真があれば、写真から起こす
+        const photos = kind === 'background' ? listRefImages('background', o.id).filter((r) => r.role === 'photo').map((r) => r.url) : [];
+        ctx.setStep(photos.length ? `${o.name} の写真を背景に起こしています…` : `${o.name} の候補を描いています…`);
+        const made = await generateRefImages(projectId, kind, o.id, DESIGN_CANDIDATES, undefined, () => undefined, { fromPhotos: photos });
         ctx.advance(`${o.name} の候補を見比べています…`);
         await rankCandidates(kind, o.id, made.map((r) => r.id));
         ctx.advance(`${o.name} の設定画の候補ができました`);
@@ -125,9 +132,11 @@ export function startDesignJob(projectId: number, kind: DesignKind, ownerIds?: n
 
 export function listDesignProposals(projectId: number, kind: DesignKind): DesignProposal[] {
   return listOwners(projectId, kind).map((owner) => {
-    const candidates = listRefImages(kind, owner.id).sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || b.id - a.id);
+    const all = listRefImages(kind, owner.id);
+    const candidates = all.filter((r) => r.role === 'candidate').sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || b.id - a.id);
     const top = candidates.find((r) => r.rank === 1 && !r.selected) ?? (owner.refImageUrl ? null : candidates[0] ?? null);
-    return { kind, owner: { id: owner.id, name: owner.name, subtitle: owner.subtitle }, candidates, top, adopted: !!owner.refImageUrl };
+    const photos = all.filter((r) => r.role === 'photo').length;
+    return { kind, owner: { id: owner.id, name: owner.name, subtitle: photos ? `${owner.subtitle}・写真${photos}枚` : owner.subtitle }, candidates, top, adopted: !!owner.refImageUrl };
   });
 }
 

@@ -262,8 +262,8 @@ export interface RefImage {
   rank: number | null;
   /** 順位の理由 */
   note: string | null;
-  /** candidate: 設定画の候補 / view: 採用画像から派生した4枚セット（正面・横顔・全身・表情 など） */
-  role: 'candidate' | 'view';
+  /** candidate: 設定画の候補 / view: 採用画像から派生した4枚セット / photo: 持ち込んだロケハン写真（背景のみ） */
+  role: 'candidate' | 'view' | 'photo';
   createdAt: string;
 }
 

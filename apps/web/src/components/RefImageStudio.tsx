@@ -53,6 +53,21 @@ export function RefImageStudio({
     });
 
   const hasAdopted = !!images?.some((img) => img.selected);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const addPhotos = (files: FileList | null) =>
+    run('ロケハン写真の追加', async () => {
+      const list = Array.from(files ?? []); // FileList は input のリセットで空になるので先に写す
+      if (!list.length) return;
+      try {
+        const urls: string[] = [];
+        for (let i = 0; i < list.length; i++) {
+          setUploading(`${i + 1} / ${list.length} 枚目を受け取っています…`);
+          urls.push((await api.uploadImage(list[i])).url);
+        }
+        await api.attachBackgroundPhotos(ownerId, urls);
+        reload();
+      } finally { setUploading(null); }
+    });
 
   const lastPrompt = images?.[0]?.prompt ?? '';
   const wide = kind === 'background';
@@ -84,6 +99,12 @@ export function RefImageStudio({
         <button className="ghost sm" onClick={() => setShowPrompt((v) => !v)}>
           {showPrompt ? 'プロンプト指定を閉じる' : 'プロンプトを指定する'}
         </button>
+        {kind === 'background' && (
+          <label className={`file-btn ${uploading || tracker.running ? 'disabled' : ''}`} title="自分で撮った写真を添付します。候補生成時に、構図を保ったまま画風に合わせた背景に起こします">
+            {uploading ?? 'ロケハン写真を追加'}
+            <input type="file" accept="image/*" multiple disabled={!!uploading || tracker.running} onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
+          </label>
+        )}
         {hasAdopted && kind !== 'style' && (
           <button
             disabled={tracker.running}
@@ -131,6 +152,7 @@ export function RefImageStudio({
               <div key={img.id} className={`gallery-item ${wide ? 'wide' : ''} ${img.selected ? 'selected' : ''}`}>
                 <img src={img.url} alt={`${ownerName} の参照画像候補`} loading="lazy" />
                 {img.selected && <span className="flag">採用中</span>}
+                {!img.selected && img.role === 'photo' && <span className="flag photo">写真</span>}
                 <div className="pick">
                   {!img.selected && (
                     <button
@@ -158,7 +180,7 @@ export function RefImageStudio({
           </div>
           <p className="muted" style={{ marginTop: 10 }}>
             採用した1枚が作画時の参照画像として全コマへ渡されます。
-            候補はそのまま残るので、LoRA学習の学習画像としても使えます。
+            {kind === 'background' && images.some((i) => i.role === 'photo') && ' 「写真」はロケハン写真です。候補を生成すると、この写真の構図を保ったまま画風に合わせた背景に起こします。'}
           </p>
         </>
       )}

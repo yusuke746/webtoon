@@ -11,7 +11,8 @@ import {
 } from '../image/replicateApi.js';
 import { createZip } from '../image/zip.js';
 import { persistImage } from '../image/storage.js';
-import { refImagePrompt } from '../prompts.js';
+import { refImagePrompt, stylizePhotoPrompt } from '../prompts.js';
+import { modelCaps } from '../image/models.js';
 import { startJob } from './jobs.js';
 
 /**
@@ -71,6 +72,15 @@ export function deleteBackground(id: number): void {
 // 参照画像
 // ============================================================
 
+/** 背景に紐付いたロケハン写真（持ち込み）を登録する */
+export function attachPhotos(backgroundId: number, urls: string[]): RefImage[] {
+  const bg = getBackground(backgroundId);
+  if (bg.projectId == null) throw new Error('ライブラリの背景には写真を付けられません');
+  const insert = db.prepare("INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, 'background', ?, ?, 'ロケハン写真（持ち込み）', 'photo')");
+  for (const u of urls) insert.run(bg.projectId, backgroundId, u);
+  return listRefImages('background', backgroundId).filter((r) => r.role === 'photo');
+}
+
 export function listRefImages(kind: RefImageKind, ownerId: number): RefImage[] {
   return (
     db
@@ -127,9 +137,15 @@ export async function generateRefImages(
   count: number,
   promptOverride: string | undefined,
   onStep: (label: string) => void,
+  options: { fromPhotos?: string[] } = {},
 ): Promise<RefImage[]> {
   const target = loadRefTarget(kind, ownerId);
   const style = projectArtStyle(projectId);
+
+  // ロケハン写真があれば、写真を画風に様式化して候補にする（構造を保ったまま漫画の背景に）
+  if (options.fromPhotos?.length) {
+    return stylizePhotosToCandidates(projectId, kind, ownerId, target.name, options.fromPhotos, count, style, onStep);
+  }
 
   let prompt = promptOverride?.trim() ?? '';
   if (!prompt) {
@@ -181,6 +197,51 @@ export async function generateRefImages(
   if (failures >= count) {
     throw new Error(`参照画像を1枚も生成できませんでした（${count}枚中 ${failures} 失敗）`);
   }
+  return created.map((id) => getRefImage(id));
+}
+
+/** 写真から背景候補を作る。写真を1枚ずつ参照に渡し、count 枚になるまで順番に様式化する */
+async function stylizePhotosToCandidates(
+  projectId: number,
+  kind: RefImageKind,
+  ownerId: number,
+  name: string,
+  photos: string[],
+  count: number,
+  style: ArtStyle | null,
+  onStep: (label: string) => void,
+): Promise<RefImage[]> {
+  const image = getImageClient();
+  // 画風のモデルが参照画像を受け取れるならそれを、受け取れないなら編集系モデルを使う
+  const styleModel = style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell';
+  const model = process.env.REPLICATE_STYLIZE_MODEL ?? (modelCaps(styleModel).refMode !== 'none' ? styleModel : 'black-forest-labs/flux-kontext-pro');
+  const insert = db.prepare("INSERT INTO ref_images (project_id, kind, owner_id, url, prompt, role) VALUES (?, ?, ?, ?, ?, 'candidate')");
+  const created: number[] = [];
+  let failures = 0;
+  for (let i = 0; i < count; i++) {
+    const photo = photos[i % photos.length];
+    const prompt = stylizePhotoPrompt(name, style?.stylePrompt ?? '');
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const result = await image.generate({
+          prompt, model,
+          referenceSheets: [{ label: `${name} (location photo)`, kind: 'background', urls: [photo] }],
+          aspectRatio: '16:9',
+          extraInput: style?.model === model ? style?.extraInput : undefined,
+        });
+        const url = await persistImage(result.url, `ref-${kind}-${ownerId}`);
+        const r = insert.run(projectId, kind, ownerId, url, `${prompt} [photo: ${photo}]`);
+        created.push(Number(r.lastInsertRowid));
+        break;
+      } catch (e) {
+        if (attempt >= MAX_ATTEMPTS) { console.warn(`[ref-images] 写真 ${i + 1} の様式化に失敗:`, e); failures += 1; break; }
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
+    onStep(`写真を背景に起こしています（${i + 1}/${count}）`);
+  }
+  if (failures >= count) throw new Error('写真から背景を1枚も作れませんでした');
   return created.map((id) => getRefImage(id));
 }
 

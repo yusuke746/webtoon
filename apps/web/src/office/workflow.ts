@@ -256,6 +256,7 @@ export function planTalk(
       if (pending.length) choices.push({ key: 'design:show:background', label: `背景の設定画の候補を見せて（${pending.length} 件）` });
       if (missing.length) choices.push({ key: 'design:start:background', label: `設定画のない ${missing.length} 件の背景の設定画を作ってもらう` });
       if (eps.length) choices.push({ key: 'locations:extract', label: (status?.backgrounds.length ? '構成とネームから新しい場所を拾い出してもらう' : '構成とネームから場所を拾い出してもらう') });
+      if (status?.backgrounds.length) choices.push({ key: 'photos:upload', label: 'ロケハン写真を渡す（自分で撮った写真から背景を起こす）' });
       return { lines: baseLines, choices: [...choices, chat, enter('背景の一覧を見る'), close] };
     }
     case 'chief':

@@ -58,6 +58,12 @@ data/series/<id>-<作品名>/
 続けて「設定画のない N 件の背景の設定画を作ってもらう」→ 候補を見比べておすすめ → 採用で **引き・入口から・細部・夜** の4枚セットを派生。
 API: `POST /api/projects/:id/jobs/design {kind}`, `GET /api/projects/:id/design?kind=`, `POST /api/design/adopt`, `POST /api/projects/:id/jobs/locations`
 
+**ロケハン写真の持ち込み**: 自分で撮った写真をロケハン担当に渡す（「ロケハン写真を渡す」／背景の一覧の「ロケハン写真を追加」）と、
+その場所の候補は **写真の構図・建物の配置を保ったまま画風に合わせて起こす**（`stylizePhotoPrompt`。写真は `role='photo'` の参照画像として保管され、候補の見比べでも参照される）。
+起こすモデルは画風のモデルが画像入力に対応していればそれ、対応していなければ `flux-kontext-pro`（`REPLICATE_STYLIZE_MODEL` で指定可）。
+※ Google ストリートビューなど他サービスの画像を生成の入力に使うのは規約違反になるので、入力は自分で撮影した写真に限る。
+API: `POST /api/uploads {dataUrl,name}`, `POST /api/backgrounds/:id/photos {urls}`
+
 修正指示は自然言語で、サーバーの `jobs/revise-scenes`（シーン構成の書き直し）と `jobs/panels`（指示付きのネーム改稿）へ渡る。
 従来のページは「書類で見る」から開ける補助に下げた（URL は従来のまま）。
 
@@ -244,6 +250,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `DESIGN_CANDIDATES`          | `4`                              | 設定画づくりで1人あたり描く候補の枚数                                       |
 | `DESIGN_VIEWS`               | `1`                              | `0` で採用時の4枚セット（正面・横顔・全身・表情）の派生を止める              |
 | `REPLICATE_VARIATION_MODEL`  | `black-forest-labs/flux-kontext-pro` | 4枚セットの派生に使う image-to-image モデル                           |
+| `REPLICATE_STYLIZE_MODEL`    | 画風のモデル（画像入力非対応なら `flux-kontext-pro`） | ロケハン写真を背景に起こすモデル                               |
 | `DATA_DIR`                   | `./data`                         | SQLite DB の保存先                                                        |
 
 Claude CLI / Replicate なしで動作確認する場合:
