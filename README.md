@@ -35,6 +35,7 @@ data/series/<id>-<作品名>/
 - Claude CLI は作品フォルダを作業ディレクトリにして起動し、読み取りツール（Read/Glob/Grep）だけ許可される。
   プロンプトに載せきれない過去話の脚本を Claude 自身が確認できる（`SERIES_FILE_ACCESS=0` で無効）
 - UI の「書庫」画面で bible.md / summary.md を直接編集でき、次の生成から反映される
+- `data/series/` は .gitignore 済み。アーカイブ自体を Git 管理したい場合は `SERIES_DIR` を別リポジトリのフォルダに向ける
 
 ## UI: RPG 風オフィス（編集部ビル）
 
