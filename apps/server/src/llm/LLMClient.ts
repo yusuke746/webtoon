@@ -13,13 +13,20 @@ export type LLMTask =
   | 'consensus'      // 議論の合意形成・要約
   | 'apply_change'   // 要約ベースの変更指示の適用
   | 'ref_image'      // 参照画像用の英語プロンプト生成
-  | 'summarize';     // 汎用要約
+  | 'summarize'      // 汎用要約（話の要約など）
+  | 'archive';       // 連載メモ（シリーズバイブル）の更新
 
 export interface LLMRequest {
   task: LLMTask;
   /** システム相当の役割指示 */
   system?: string;
   prompt: string;
+  /**
+   * 作業ディレクトリ（連載アーカイブのフォルダ）。
+   * Claude CLI 実装はここを cwd にして起動し、読み取り系ツールを許可するため、
+   * プロンプトに載せきれない過去話の脚本を Claude 自身がファイルから確認できる。
+   */
+  cwd?: string;
 }
 
 export interface LLMClient {

@@ -261,7 +261,8 @@ export type JobKind =
   | 'discussion'
   | 'apply_change'
   | 'ref_images'
-  | 'lora_train';
+  | 'lora_train'
+  | 'archive';
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -327,6 +328,38 @@ export interface LoraTraining {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ---------- 連載アーカイブ（書庫） ----------
+
+export interface ArchiveFile {
+  /** アーカイブルートからの相対パス */
+  path: string;
+  size: number;
+  mtime: string;
+  /** UI から編集できるか（Markdown のみ） */
+  editable: boolean;
+}
+
+export interface ArchiveEpisodeStatus {
+  episodeId: number;
+  number: number;
+  title: string;
+  status: EpisodeStatus;
+  hasScript: boolean;
+  /** マネージャーによる要約（summary.md）があるか */
+  hasSummary: boolean;
+  summaryUpdatedAt: string | null;
+}
+
+export interface ArchiveInfo {
+  /** ディスク上の絶対パス */
+  dir: string;
+  exists: boolean;
+  files: ArchiveFile[];
+  episodes: ArchiveEpisodeStatus[];
+  /** bible.md の「連載メモ」ブロック（未生成なら空文字） */
+  notes: string;
 }
 
 // ---------- デフォルト値 ----------

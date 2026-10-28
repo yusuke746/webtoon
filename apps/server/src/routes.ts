@@ -11,6 +11,10 @@ import {
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
+import {
+  getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
+  updateBibleNotes, writeArchiveFile,
+} from './engines/archive.js';
 import { getLLMClient } from './llm/index.js';
 import { getImageClient } from './image/index.js';
 import { getJob, listActiveJobs, listJobs, startJob } from './engines/jobs.js';
@@ -542,3 +546,59 @@ function copyRowToProject(
   ).run(...values);
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(Number(result.lastInsertRowid)) as any;
 }
+
+// ============ 連載アーカイブ（書庫） ============
+
+router.get('/projects/:id/archive', wrap((req, res) => {
+  res.json(getArchiveInfo(id(req)));
+}));
+
+/** DB の内容をフォルダへ書き出す（LLM は使わない） */
+router.post('/projects/:id/archive/sync', wrap((req, res) => {
+  res.json(syncArchive(id(req)));
+}));
+
+router.get('/projects/:id/archive/file', wrap((req, res) => {
+  const rel = String(req.query.path ?? '');
+  res.json({ path: rel, content: readArchiveFile(id(req), rel) });
+}));
+
+router.put('/projects/:id/archive/file', wrap((req, res) => {
+  const { path: rel, content } = req.body ?? {};
+  writeArchiveFile(id(req), String(rel ?? ''), String(content ?? ''));
+  res.json({ ok: true });
+}));
+
+/** 1話の要約を生成（summary.md）。連載メモは更新しない */
+router.post('/episodes/:id/archive/summarize', wrap(async (req, res) => {
+  res.json({ summary: await summarizeEpisode(id(req)) });
+}));
+
+/** 話を書庫へ登録: 要約生成 + 連載メモ更新（ジョブ化。数十秒〜） */
+router.post('/episodes/:id/archive/register', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const job = startJob(
+    {
+      projectId: episode.projectId,
+      kind: 'archive',
+      label: `第${episode.number}話を書庫へ登録`,
+      totalSteps: 2,
+      step: '要約を作成しています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await summarizeEpisode(episodeId);
+      ctx.advance('連載メモを更新しています…');
+      await updateBibleNotes(episode.projectId);
+    },
+  );
+  res.status(202).json(job);
+}));
+
+/** 連載メモだけを全話の要約から書き直す */
+router.post('/projects/:id/archive/notes', wrap(async (req, res) => {
+  res.json({ notes: await updateBibleNotes(id(req)) });
+}));

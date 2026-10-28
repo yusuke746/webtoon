@@ -9,6 +9,7 @@ import {
 } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds } from './visual.js';
+import { archiveDir, buildSeriesContext, registerEpisode, syncArchive } from './archive.js';
 
 // ---------- 取得ヘルパ ----------
 
@@ -46,9 +47,12 @@ export async function generateStructure(projectId: number, episodeCount: number)
   const existing = listEpisodes(projectId);
   const foreshadowings = listForeshadowings(projectId);
 
+  // 続きの話を作るときは、連載マネージャーの文脈（連載メモ・各話要約）を渡して矛盾を防ぐ
+  const seriesContext = existing.length ? buildSeriesContext(projectId) : '';
   const text = await getLLMClient().complete({
     task: 'structure',
-    prompt: structurePrompt(project, episodeCount, existing, foreshadowings),
+    prompt: structurePrompt(project, episodeCount, existing, foreshadowings, seriesContext),
+    cwd: seriesContext ? archiveDir(project) : undefined,
   });
   const out = extractJson<StructureOutput>(text);
 
@@ -76,7 +80,17 @@ export async function generateStructure(projectId: number, episodeCount: number)
     );
   }
 
+  safeSync(projectId);
   return listEpisodes(projectId);
+}
+
+/** 書庫への書き出し。失敗しても生成結果は返したいので警告に留める */
+function safeSync(projectId: number) {
+  try {
+    syncArchive(projectId);
+  } catch (e) {
+    console.warn('[archive] 書庫の同期に失敗しました:', (e as Error).message);
+  }
 }
 
 // ---------- キャラクター生成 ----------
@@ -90,9 +104,11 @@ export async function generateCharacters(projectId: number): Promise<Character[]
   const episodes = listEpisodes(projectId);
   const existing = listCharacters(projectId);
 
+  const seriesContext = buildSeriesContext(projectId, { includePreviousScript: false, maxChars: 8000 });
   const text = await getLLMClient().complete({
     task: 'characters',
-    prompt: charactersPrompt(project, episodes),
+    prompt: charactersPrompt(project, episodes, seriesContext),
+    cwd: seriesContext ? archiveDir(project) : undefined,
   });
   const out = extractJson<CharactersOutput>(text);
 
@@ -103,6 +119,7 @@ export async function generateCharacters(projectId: number): Promise<Character[]
     if (existing.some((e) => e.name === c.name)) continue; // 手動編集済みキャラを上書きしない
     insert.run(projectId, c.name, c.role ?? '', c.appearance ?? '', c.personality ?? '');
   }
+  safeSync(projectId);
   return listCharacters(projectId);
 }
 
@@ -124,9 +141,13 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
   const llm = getLLMClient();
   const backgrounds = listBackgrounds(episode.projectId);
 
+  // 前の話までの要約と直前の話の全文を渡し、人物の現在地・口調を引き継ぐ
+  const seriesContext = buildSeriesContext(episode.projectId, { uptoEpisode: episode.number });
+  const cwd = seriesContext ? archiveDir(project) : undefined;
   const text = await llm.complete({
     task: 'panels',
-    prompt: panelsPrompt(project, episode, characters, backgrounds),
+    prompt: panelsPrompt(project, episode, characters, backgrounds, seriesContext),
+    cwd,
   });
   let out = extractJson<PanelsOutput>(text);
 
@@ -157,6 +178,18 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
     );
   });
   db.prepare("UPDATE episodes SET status = 'paneled' WHERE id = ?").run(episodeId);
+
+  // 書庫へ登録: 要約と連載メモを更新する（次話以降の生成に使う）。失敗してもネームは有効
+  if (process.env.ARCHIVE_AUTO_REGISTER !== '0') {
+    try {
+      await registerEpisode(episodeId);
+    } catch (e) {
+      console.warn('[archive] 書庫への登録に失敗しました:', (e as Error).message);
+      safeSync(episode.projectId);
+    }
+  } else {
+    safeSync(episode.projectId);
+  }
 
   return listPanels(episodeId);
 }
@@ -332,5 +365,6 @@ export async function generateEpisodeImages(
     throw new Error(`${failed.length} コマの作画に失敗しました: ${failed.join(', ')}（再実行で失敗分のみ再作画されます）`);
   }
   db.prepare("UPDATE episodes SET status = 'rendered' WHERE id = ?").run(episodeId);
+  safeSync(rowToEpisode(db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as any).projectId);
   return listPanels(episodeId);
 }

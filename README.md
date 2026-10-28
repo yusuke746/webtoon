@@ -13,6 +13,29 @@
 | 5 | **みやすいUI/UX**      | 制作フローを「エピソード選択 → シーン構成 → ネーム生成 → 作画」のステッパーで可視化し、その順に画面遷移する。長時間処理は非同期ジョブ化して進捗を表示                             |
 | 6 | **一貫性アセット工房** | キャラ・背景の参照画像を Replicate で複数枚生成して1枚を採用。さらに対象専用の LoRA を Replicate の trainings API で学習できる                                                       |
 
+## 書庫（連載アーカイブ）と連載マネージャー
+
+作品ごとに **人間が読める Markdown のフォルダ** を保ち、生成のたびに書き出す。
+「連載マネージャー」はこのフォルダを根拠に各話の要約と「連載メモ」（人物の現在地・確定設定・未回収の伏線）を
+Claude で更新し、以降の構成生成・ネーム生成のプロンプトへ文脈として渡す。
+LoRA が «絵» の一貫性を担うのに対し、書庫は «物語» の一貫性を担う。
+
+```
+data/series/<id>-<作品名>/
+  bible.md             シリーズバイブル。auto ブロックは設定から再生成、連載メモはマネージャー、作者メモは自由記述
+  characters/*.md      キャラ設定（参照画像のコピー付き）
+  episodes/NN/script.md    構成 + ネーム（DB から毎回書き出し）
+  episodes/NN/summary.md   話の要約（マネージャー生成。手直し可）
+  episodes/NN/images/      作画済みコマ
+  foreshadow.md        伏線の状態
+  meetings/*.md        AI編集会議のログ
+```
+
+- ネーム生成が終わると自動で「書庫へ登録」（要約生成 → 連載メモ更新）される（`ARCHIVE_AUTO_REGISTER=0` で無効）
+- Claude CLI は作品フォルダを作業ディレクトリにして起動し、読み取りツール（Read/Glob/Grep）だけ許可される。
+  プロンプトに載せきれない過去話の脚本を Claude 自身が確認できる（`SERIES_FILE_ACCESS=0` で無効）
+- UI の「書庫」画面で bible.md / summary.md を直接編集でき、次の生成から反映される
+
 ## 制作フロー
 
 ```
@@ -76,7 +99,8 @@ apps/
     src/llm/      LLMClient 抽象化層（ClaudeCliClient / MockLLMClient）
     src/image/    ImageClient 抽象化層 + Replicate REST（predictions/files/trainings）+ 無依存ZIP writer
     src/engines/  story（構成/キャラ/ネーム/作画）, foreshadow, discussion, changes,
-                  jobs（非同期ジョブ基盤）, visual（参照画像・背景・LoRA学習）
+                  jobs（非同期ジョブ基盤）, visual（参照画像・背景・LoRA学習）,
+                  archive（書庫: Markdown フォルダの書き出し・要約・連載メモ・生成用文脈）
   web/      React + Vite フロントエンド
     src/components/  WorkflowStepper, JobProgress, RefImageStudio, LoraStudio, PageViewer
     src/pages/       ダッシュボード / 制作フロー4画面 / キャラ / 背景 / 伏線 / AI議論 / 設定
@@ -137,6 +161,9 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `LORA_POLL_INTERVAL_MS`      | `15000`                          | 学習状況のポーリング間隔                                                  |
 | `LORA_TIMEOUT_MS`            | `5400000`                        | 学習の打ち切り時間（既定90分）                                            |
 | `PORT`                       | `3001`                           | API サーバーのポート                                                      |
+| `SERIES_DIR`                 | `<DATA_DIR>/series`              | 書庫（連載アーカイブ）の保存先                                            |
+| `ARCHIVE_AUTO_REGISTER`      | `1`                              | `0` でネーム生成後の自動登録（要約・連載メモ更新）を止める                 |
+| `SERIES_FILE_ACCESS`         | `1`                              | `0` で Claude CLI の書庫フォルダ読み取り（Read/Glob/Grep）を止める         |
 | `DATA_DIR`                   | `./data`                         | SQLite DB の保存先                                                        |
 
 Claude CLI / Replicate なしで動作確認する場合:

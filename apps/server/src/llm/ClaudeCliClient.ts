@@ -9,6 +9,7 @@ import type { LLMClient, LLMRequest } from './LLMClient.js';
  *   CLAUDE_CLI_PATH   … CLI のパス（デフォルト: "claude"）
  *   CLAUDE_CLI_MODEL  … モデル指定（省略時は CLI のデフォルト）
  *   LLM_TIMEOUT_MS    … タイムアウト（デフォルト: 300000 = 5分）
+ *   SERIES_FILE_ACCESS… "0" で、連載アーカイブのファイル読み取り（Read/Glob/Grep ツール）を無効化
  */
 export class ClaudeCliClient implements LLMClient {
   readonly name = 'claude-cli';
@@ -20,8 +21,11 @@ export class ClaudeCliClient implements LLMClient {
     const args = ['-p', '--output-format', 'json'];
     if (this.model) args.push('--model', this.model);
     if (req.system) args.push('--append-system-prompt', req.system);
+    // 連載アーカイブを cwd にし、読み取り専用ツールだけ許可する（書き込みはアプリ側が担う）
+    const cwd = req.cwd && process.env.SERIES_FILE_ACCESS !== '0' ? req.cwd : undefined;
+    if (cwd) args.push('--allowedTools', 'Read,Glob,Grep');
 
-    const stdout = await this.run(args, req.prompt);
+    const stdout = await this.run(args, req.prompt, cwd);
     // --output-format json は {"result": "...", ...} 形式で返す
     try {
       const parsed = JSON.parse(stdout);
@@ -32,11 +36,12 @@ export class ClaudeCliClient implements LLMClient {
     return stdout;
   }
 
-  private run(args: string[], stdin: string): Promise<string> {
+  private run(args: string[], stdin: string, cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.cliPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: process.env,
+        cwd,
       });
       let out = '';
       let err = '';

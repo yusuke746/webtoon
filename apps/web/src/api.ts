@@ -1,4 +1,5 @@
 import type {
+  ArchiveInfo,
   ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
   Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
   Panel, Project, RefImage, RefImageKind, Worldview,
@@ -145,4 +146,14 @@ export const api = {
     },
   ) => post<LoraStart>(`/projects/${projectId}/lora-trainings`, body),
   cancelLoraTraining: (id: number) => post<LoraTraining>(`/lora-trainings/${id}/cancel`),
+
+  // 連載アーカイブ（書庫）
+  getArchive: (projectId: number) => get<ArchiveInfo>(`/projects/${projectId}/archive`),
+  syncArchive: (projectId: number) => post<ArchiveInfo>(`/projects/${projectId}/archive/sync`),
+  readArchiveFile: (projectId: number, path: string) =>
+    get<{ path: string; content: string }>(`/projects/${projectId}/archive/file?path=${encodeURIComponent(path)}`),
+  writeArchiveFile: (projectId: number, path: string, content: string) =>
+    put<{ ok: boolean }>(`/projects/${projectId}/archive/file`, { path, content }),
+  registerEpisodeToArchive: (episodeId: number) => post<Job>(`/episodes/${episodeId}/archive/register`),
+  updateArchiveNotes: (projectId: number) => post<{ notes: string }>(`/projects/${projectId}/archive/notes`),
 };

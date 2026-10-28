@@ -13,6 +13,7 @@ import { ForeshadowPage } from './pages/ForeshadowPage';
 import { DiscussionsPage } from './pages/DiscussionsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ArchivePage } from './pages/ArchivePage';
 
 /**
  * サイドバー。
@@ -51,6 +52,7 @@ function Sidebar() {
           <div className="section">検討・管理</div>
           <NavLink to={`/projects/${projectId}/foreshadow`}><span className="ico">🧩</span>伏線ボード</NavLink>
           <NavLink to={`/projects/${projectId}/discussions`}><span className="ico">💬</span>AI編集会議</NavLink>
+          <NavLink to={`/projects/${projectId}/archive`}><span className="ico">📚</span>書庫（連載アーカイブ）</NavLink>
         </>
       )}
     </nav>
@@ -86,6 +88,7 @@ export function App() {
       <Route path="/projects/:projectId/foreshadow" element={page(<ForeshadowPage />)} />
       <Route path="/projects/:projectId/discussions" element={page(<DiscussionsPage />)} />
       <Route path="/projects/:projectId/settings" element={page(<SettingsPage />)} />
+      <Route path="/projects/:projectId/archive" element={page(<ArchivePage />)} />
 
       {/* 制作フロー: エピソード選択 → シーン構成 → ネーム生成 → 作画 */}
       <Route path="/projects/:projectId/episodes" element={page(<EpisodeSelectPage />)} />

@@ -6,11 +6,27 @@ import type {
 
 const JSON_ONLY = '出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。';
 
+/**
+ * 連載マネージャーが用意した文脈（連載メモ・各話要約・直前の話の全文）をプロンプトへ差し込む。
+ * アーカイブが空なら何も出さない。
+ */
+function seriesContextSection(seriesContext?: string): string {
+  if (!seriesContext?.trim()) return '';
+  return `
+## 連載アーカイブ（連載マネージャーより。設定・人物の現在地・時系列はここと矛盾させないこと）
+${seriesContext.trim()}
+
+作業ディレクトリに連載アーカイブ（bible.md / characters/ / episodes/NN/script.md / foreshadow.md）があります。
+上記で足りない過去話の描写やセリフを確認したい場合は、該当ファイルを読んでから書いてください。
+`;
+}
+
 export function structurePrompt(
   project: Project,
   episodeCount: number,
   existingEpisodes: Episode[],
   foreshadowings: Foreshadowing[],
+  seriesContext?: string,
 ): string {
   const tmpl: StoryTemplate = project.storyTemplate;
   const existing = existingEpisodes.length
@@ -37,7 +53,7 @@ ${project.synopsis}
 - 1話あたり約${tmpl.pagesPerEpisode}ページ
 - 追加指示: ${tmpl.instructions || 'なし'}
 ${existing}${fs}
-
+${seriesContextSection(seriesContext)}
 ## 依頼
 新しく${episodeCount}話分の構成を作成してください。物語に「伏線(setup)」と「回収(payoff)」を意図的に設計し、各シーンにどの伏線が関わるかを明記してください。
 
@@ -72,7 +88,7 @@ ${existing}${fs}
 ${JSON_ONLY}`;
 }
 
-export function charactersPrompt(project: Project, episodes: Episode[]): string {
+export function charactersPrompt(project: Project, episodes: Episode[], seriesContext?: string): string {
   return `あなたはプロのキャラクターデザイナーです。以下の作品に登場するキャラクターの設定を作ってください。
 
 ## あらすじ
@@ -80,7 +96,7 @@ ${project.synopsis}
 
 ## 話数構成
 ${episodes.map((e) => `- 第${e.number}話「${e.title}」: ${e.summary}\n  シーン: ${e.scenes.map((s) => `${s.title}(${s.characters.join('・')})`).join(' / ')}`).join('\n')}
-
+${seriesContextSection(seriesContext)}
 ## 依頼
 構成に登場する全キャラクターについて、画像生成の一貫性維持に使える具体的な外見描写を含む設定を作成してください。
 
@@ -103,6 +119,7 @@ export function panelsPrompt(
   episode: Episode,
   characters: Character[],
   backgrounds: Background[] = [],
+  seriesContext?: string,
 ): string {
   const rules: PanelRules = project.panelRules;
   const bgSection = backgrounds.length
@@ -123,6 +140,7 @@ ${episode.scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.summary}（登場: ${s
 ## キャラクター設定（セリフの口調・外見描写に反映すること）
 ${characters.map((c) => `- ${c.name}（${c.role}）: 外見=${c.appearance} / 性格=${c.personality}`).join('\n')}
 ${bgSection}
+${seriesContextSection(seriesContext)}
 ${panelRulesSection(project)}
 
 ## 依頼
@@ -394,4 +412,59 @@ export function projectContextSummary(
       ? `伏線:\n${foreshadowings.map((f) => `- ${f.title}(${f.status})`).join('\n')}`
       : '伏線: なし',
   ].join('\n\n');
+}
+
+// ---------- 連載マネージャー（書庫） ----------
+
+export function archiveEpisodeSummaryPrompt(
+  project: Project,
+  episode: Episode,
+  script: string,
+  previousContext: string,
+): string {
+  return `あなたは漫画編集部の「連載マネージャー」です。作品「${project.title}」の第${episode.number}話「${episode.title}」の脚本・ネームを読み、
+後続の話を書く作家が «一貫性を保つために必要な情報» だけを Markdown で整理してください。感想や評価は不要です。
+${previousContext ? `\n## これまでの流れ（参考）\n${previousContext}\n` : ''}
+## 第${episode.number}話の脚本・ネーム
+${script}
+
+## 出力形式（Markdown のみ。前置き不要）
+# 第${episode.number}話「${episode.title}」要約
+## あらすじ（300字以内）
+## 登場人物と変化
+（名前: この話での行動・心情・関係の変化。初登場なら「初登場」と明記）
+## 新たに判明した設定・事実
+（世界観・能力・過去など、以後矛盾させてはいけないこと）
+## 伏線の動き
+（導入 / 進展 / 回収 を伏線名ごとに）
+## 次話への引き
+## 口調・文体メモ
+（キャラの一人称・呼び方・口癖、ナレーションの文体など）`;
+}
+
+export function archiveBibleNotesPrompt(
+  project: Project,
+  currentNotes: string,
+  summaries: { number: number; title: string; text: string }[],
+  foreshadowings: Foreshadowing[],
+): string {
+  return `あなたは漫画編集部の「連載マネージャー」です。作品「${project.title}」のシリーズバイブルの「連載メモ」を最新の状態に書き直してください。
+連載メモは、次の話を書く作家が最初に読む «現在地の要約» です。古い情報は最新話の内容で上書きし、矛盾があれば最新話を優先して明記してください。
+
+## 現在の連載メモ
+${currentNotes.trim() || '（まだありません）'}
+
+## 各話の要約（古い順）
+${summaries.map((s) => `--- 第${s.number}話「${s.title}」 ---\n${s.text}`).join('\n\n')}
+
+## 伏線の登録状況（アプリ側の管理データ）
+${foreshadowings.length ? foreshadowings.map((f) => `- ${f.title}（${f.status} / 導入 ${f.setupEpisode ?? '未'}話 / 回収予定 ${f.plannedPayoffEpisode ?? '未定'}話）`).join('\n') : 'なし'}
+
+## 出力形式（Markdown のみ。見出しは以下を必ず使う。前置き不要）
+## 現在の状況（最新話時点）
+## 人物の現在地（関係・感情・所在）
+## 確定した設定・ルール（矛盾させてはいけないこと）
+## 時系列
+## 未回収の伏線と含み
+## 文体・演出の約束事`;
 }
