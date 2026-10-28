@@ -5,6 +5,8 @@ import type {
   Panel, Project, RefImage, RefImageKind, Worldview,
 } from '@manga/shared';
 
+export interface Proposal { title: string; detail: string; instruction: string }
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -158,8 +160,11 @@ export const api = {
   updateArchiveNotes: (projectId: number) => post<{ notes: string }>(`/projects/${projectId}/archive/notes`),
 
   // オフィスの NPC との相談
-  talk: (projectId: number, npcId: string, message: string, history: { role: 'user' | 'npc'; text: string }[]) =>
-    post<{ reply: string; action: 'apply_change' | null }>(`/projects/${projectId}/talk`, { npcId, message, history }),
+  talk: (projectId: number, npcId: string, message: string, history: { role: 'user' | 'npc'; text: string }[], episodeId?: number | null) =>
+    post<{ reply: string; action: 'apply_change' | null }>(`/projects/${projectId}/talk`, { npcId, message, history, episodeId }),
+  /** NPC からの提案（next: 次の展開 / review: 気になる点）。canApply なら各案に反映用の指示文が付く */
+  propose: (projectId: number, npcId: string, mode: 'next' | 'review', episodeId?: number | null) =>
+    post<{ reply: string; proposals: Proposal[]; canApply: boolean }>(`/projects/${projectId}/propose`, { npcId, mode, episodeId }),
 
   // オフィス用ジョブ（会話から頼む作業）
   startStructureJob: (projectId: number, episodeCount: number, instruction?: string) =>

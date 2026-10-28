@@ -12,7 +12,7 @@ import {
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
-import { talkToNpc } from './engines/talk.js';
+import { proposeFromNpc, talkToNpc } from './engines/talk.js';
 import { adoptDesign, listDesignProposals, startDesignJob, startLocationsJob } from './engines/design.js';
 import {
   getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
@@ -671,9 +671,15 @@ router.post('/projects/:id/archive/notes', wrap(async (req, res) => {
 // ============ オフィスの NPC との相談 ============
 
 router.post('/projects/:id/talk', wrap(async (req, res) => {
-  const { npcId, message, history } = req.body ?? {};
+  const { npcId, message, history, episodeId } = req.body ?? {};
   if (!npcId || !message) { res.status(400).json({ error: 'npcId と message が必要です' }); return; }
-  res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : []));
+  res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : [], episodeId ? Number(episodeId) : null));
+}));
+
+router.post('/projects/:id/propose', wrap(async (req, res) => {
+  const { npcId, mode, episodeId } = req.body ?? {};
+  if (!npcId) { res.status(400).json({ error: 'npcId が必要です' }); return; }
+  res.json(await proposeFromNpc(id(req), String(npcId), mode === 'review' ? 'review' : 'next', episodeId ? Number(episodeId) : null));
 }));
 
 // ============ 設定画づくり（キャラ・背景） / 場所の拾い出し ============

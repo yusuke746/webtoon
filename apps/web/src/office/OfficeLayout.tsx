@@ -243,6 +243,36 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (key === 'close') { setTalk(null); return; }
     if (key === 'enter') { setTalk(null); navigate(routeFor(npc)); return; }
     if (key === 'chat') { openInput('chat'); return; }
+    if (key.startsWith('propose:') && projectId) {
+      const mode = key.split(':')[1] === 'review' ? 'review' : 'next';
+      setTalk({ ...talk, phase: 'waiting', content: undefined });
+      api.propose(projectId, npc.id, mode, focus?.id)
+        .then((r) => setTalk((t) => {
+          if (!t) return t;
+          const body = r.proposals.map((p, i) => `${i + 1}. ${p.title}\n${p.detail}`).join('\n\n');
+          const reply = [r.reply, body].filter(Boolean).join('\n\n');
+          return {
+            ...t, phase: 'reply', reply, proposals: r.proposals,
+            history: [...t.history, { role: 'user', text: mode === 'review' ? '気になる点を教えて' : '次の展開を提案して' }, { role: 'npc', text: reply }],
+            choices: [
+              ...(r.canApply ? r.proposals.map((p, i) => ({ key: `apply:prop:${i}`, label: `案${i + 1}「${p.title}」を構成に反映する` })) : []),
+              { key: 'chat', label: '続けて相談する' }, { key: 'enter', label: `${t.npc.room}を見る` }, { key: 'close', label: 'また今度' },
+            ],
+          };
+        }))
+        .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（提案がもらえませんでした: ${e.message}）`, choices: [{ key: 'chat', label: '相談する' }, { key: 'close', label: 'また今度' }] }));
+      return;
+    }
+    if (key.startsWith('apply:prop:') && projectId) {
+      const i = Number(key.split(':')[2]);
+      const prop = talk.proposals?.[i];
+      if (!prop) return;
+      setTalk({ ...talk, phase: 'waiting' });
+      api.applyChange(projectId, prop.instruction || `${prop.title}: ${prop.detail}`)
+        .then(() => { setTalk((t) => t && { ...t, phase: 'reply', reply: `案${i + 1}「${prop.title}」を構成に反映した。構成と伏線を確認してくれ。`, choices: t.choices.filter((c) => c.key !== key) }); loadStatus(); })
+        .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `反映に失敗した: ${e.message}` }));
+      return;
+    }
     if (key === 'apply' && projectId) {
       setTalk({ ...talk, phase: 'waiting' });
       api.applyChange(projectId, talk.lastMessage)
@@ -419,7 +449,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (purpose === 'chat') {
       const history = [...talk.history, { role: 'user' as const, text }];
       setTalk({ ...talk, phase: 'waiting', lastMessage: text, history });
-      api.talk(projectId, talk.npc.id, text, talk.history)
+      api.talk(projectId, talk.npc.id, text, talk.history, focus?.id)
         .then((r) => setTalk((t) => t && {
           ...t, phase: 'reply', reply: r.reply, history: [...history, { role: 'npc', text: r.reply }],
           choices: [

@@ -210,6 +210,7 @@ export function planTalk(
       } else {
         if (focus) choices.push({ key: 'scenes:show', label: `${f}のシーン構成を見せて` });
         choices.push({ key: 'structure:1', label: '続きを1話分書いてもらう' }, { key: 'structure:2', label: '続きを2話分書いてもらう' });
+        choices.push({ key: 'propose:next', label: '次の展開を提案してもらう' }, { key: 'propose:review', label: focus ? `${f}で気になる点を聞く` : 'いまの構成で気になる点を聞く' });
       }
       return { lines: baseLines, choices: [...choices, chat, enter('書類で見る'), close] };
     }
@@ -259,8 +260,16 @@ export function planTalk(
       if (status?.backgrounds.length) choices.push({ key: 'photos:upload', label: 'ロケハン写真を渡す（自分で撮った写真から背景を起こす）' });
       return { lines: baseLines, choices: [...choices, chat, enter('背景の一覧を見る'), close] };
     }
-    case 'chief':
-      return { lines: baseLines, choices: [chat, enter('ダッシュボードを見る'), close] };
+    case 'chief': {
+      const choices: Choice[] = eps.length
+        ? [{ key: 'propose:next', label: '次の展開をどう考えてるか聞く' }, { key: 'propose:review', label: focus ? `${f}の気になる点を聞く` : 'いまの構成の気になる点を聞く' }]
+        : [];
+      return { lines: baseLines, choices: [...choices, chat, enter('ダッシュボードを見る'), close] };
+    }
+    case 'foreshadow': {
+      const choices: Choice[] = eps.length ? [{ key: 'propose:review', label: '伏線の回収案を聞く' }] : [];
+      return { lines: baseLines, choices: [...choices, chat, enter('伏線ボードを見る'), close] };
+    }
     case 'meeting':
       return { lines: baseLines, choices: [chat, enter('会議室に入る'), close] };
     default:

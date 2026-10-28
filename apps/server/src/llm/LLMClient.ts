@@ -20,7 +20,8 @@ export type LLMTask =
   | 'visual_prompt'  // 絵の指示用の固定文（英語）
   | 'art_check'      // 作画チェック（画像を見て設定と照合）
   | 'art_pick'       // 設定画の候補を見比べて順位付け
-  | 'locations';     // 構成・ネームから場所を拾い出す
+  | 'locations'      // 構成・ネームから場所を拾い出す
+  | 'propose';       // NPC からの提案（次の展開 / 気になる点）
 
 export interface LLMRequest {
   task: LLMTask;

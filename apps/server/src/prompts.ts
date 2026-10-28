@@ -1,5 +1,5 @@
 import type {
-  Background, Character, Episode, Foreshadowing, PanelRules, Project, StoryTemplate,
+  Background, Character, Episode, Foreshadowing, Panel, PanelRules, Project, StoryTemplate,
 } from '@manga/shared';
 
 /** Claude へ渡すプロンプトのテンプレート集。すべて JSON 出力を強制する */
@@ -484,6 +484,44 @@ ${foreshadowings.length ? foreshadowings.map((f) => `- ${f.title}（${f.status} 
 
 // ---------- オフィスの NPC との相談 ----------
 
+/**
+ * 相談・提案で NPC に渡す «作品の中身»。要約だけでなく、人物の外見・性格、場所、担当中の話のシーン構成とネームまで渡す。
+ * 長くなりすぎないよう各項目を切り詰める。
+ */
+export function talkDetailSection(
+  characters: Character[],
+  backgrounds: Background[],
+  focus: { episode: Episode; panels: Panel[] } | null,
+  maxChars = 7000,
+): string {
+  const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t);
+  const parts: string[] = [];
+  if (characters.length) {
+    parts.push(`### 登場人物の詳細\n${characters.map((c) => `- ${c.name}（${c.role}）: 外見: ${clip(c.appearance || '未設定', 160)} / 性格: ${clip(c.personality || '未設定', 160)}`).join('\n')}`);
+  }
+  if (backgrounds.length) {
+    parts.push(`### 登録済みの場所\n${backgrounds.map((b) => `- ${b.name}: ${clip(b.description || '説明なし', 120)}`).join('\n')}`);
+  }
+  if (focus) {
+    const { episode: e, panels } = focus;
+    const scenes = e.scenes.length
+      ? e.scenes.map((sc, i) => `${i + 1}. ${sc.title}: ${clip(sc.summary, 200)}（登場: ${sc.characters.join('・') || 'なし'}）`).join('\n')
+      : '（シーン構成なし）';
+    let name = '';
+    if (panels.length) {
+      const lines = panels.map((p) => {
+        const dlg = p.dialogues.map((d) => (d.kind === 'narration' ? `N「${d.text}」` : d.kind === 'sfx' ? `[${d.text}]` : `${d.speaker}「${d.text}」`)).join(' ');
+        return `p${p.layout.page} #${p.index + 1}: ${clip(p.description, 120)}${dlg ? ` ${clip(dlg, 160)}` : ''}`;
+      });
+      name = `\nネーム（${panels.length} コマ）:\n${lines.join('\n')}`;
+    }
+    parts.push(`### 担当中の話: 第${e.number}話「${e.title}」（${e.status}）\n${e.summary}\nシーン構成:\n${scenes}${name}`);
+  }
+  let out = parts.join('\n\n');
+  if (out.length > maxChars) out = `${out.slice(0, maxChars)}\n…（長いため省略）`;
+  return out;
+}
+
 export function talkPrompt(
   project: Project,
   persona: { name: string; canApply: boolean },
@@ -493,12 +531,14 @@ export function talkPrompt(
   seriesContext: string,
   history: { role: 'user' | 'npc'; text: string }[],
   message: string,
+  detail = '',
 ): string {
   return `あなたは漫画編集部の「${persona.name}」として、作者（ユーザー）と会話しています。作品の状況を踏まえて、役割にふさわしい口調で «3〜6文» で答えてください。
+作品の中身（人物・場所・担当中の話のシーン構成とネーム）を把握したうえで、具体的な話数・人物名・シーンに触れて答えてください。
 
 ## 作品の状況
 ${projectContextSummary(project, episodes, characters, foreshadowings)}
-${seriesContext ? `\n## 連載アーカイブ（連載マネージャーより）\n${seriesContext}\n` : ''}
+${detail ? `\n## 作品の中身\n${detail}\n` : ''}${seriesContext ? `\n## 連載アーカイブ（連載マネージャーより）\n${seriesContext}\n` : ''}
 ${history.length ? `## これまでの会話\n${history.map((h) => `${h.role === 'user' ? '作者' : persona.name}: ${h.text}`).join('\n')}\n` : ''}
 ## 今回の発言
 ${message}
@@ -507,6 +547,36 @@ ${message}
 {
   "reply": "返答（日本語。改行可）",
   "action": ${persona.canApply ? '"apply_change" または null  … 発言が «構成・伏線・話の内容を変える具体的な要望» で、そのまま反映して良いなら "apply_change"。質問や雑談なら null' : 'null'}
+}
+${JSON_ONLY}`;
+}
+
+/** NPC からの提案。mode: next = 次の展開 / review = いまの構成・ネームで気になる点 */
+export function proposePrompt(
+  project: Project,
+  persona: { name: string; canApply: boolean },
+  mode: 'next' | 'review',
+  episodes: Episode[],
+  characters: Character[],
+  foreshadowings: Foreshadowing[],
+  seriesContext: string,
+  detail: string,
+): string {
+  const ask = mode === 'next'
+    ? `この連載の «次の展開» を、あなたの役割の観点から 3 案提案してください。これまでの話の流れ・人物の現在地・未回収の伏線を踏まえ、どの話に何を入れるかまで具体的に。既にある話の焼き直しは避けること。`
+    : `いまの構成（担当中の話があればそのシーン構成とネーム）を読んで、あなたの役割の観点から «気になる点» を 3 つ指摘し、それぞれ直し方を添えてください。矛盾・動機の弱さ・伏線の放置・テンポ・見せ場の不足など、具体的な話数・シーン・人物名を挙げて。褒めるだけの指摘は不要。`;
+  return `あなたは漫画編集部の「${persona.name}」です。作者（ユーザー）に、作品の中身を踏まえた提案をします。
+${ask}
+
+## 作品の状況
+${projectContextSummary(project, episodes, characters, foreshadowings)}
+${detail ? `\n## 作品の中身\n${detail}\n` : ''}${seriesContext ? `\n## 連載アーカイブ（連載マネージャーより）\n${seriesContext}\n` : ''}
+## 出力形式（JSON）
+{
+  "reply": "前置き1〜2文（役割の口調で。日本語）",
+  "proposals": [
+    { "title": "案の見出し（20字以内）", "detail": "内容（2〜4文。どの話のどこに何を、まで具体的に）", "instruction": "この案をそのまま構成に反映するときの指示文（1〜2文。命令形）" }
+  ]
 }
 ${JSON_ONLY}`;
 }

@@ -9,7 +9,7 @@ import {
 } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds, listRefImages } from './visual.js';
-import { archiveDir, buildSeriesContext, registerEpisode, syncArchive } from './archive.js';
+import { archiveDir, buildSeriesContext, getArchiveInfo, registerEpisode, syncArchive } from './archive.js';
 import { ART_CHECK_ENABLED, ART_CHECK_MAX_RETRY, NO_TEXT_NEGATIVE, NO_TEXT_PROMPT, checkPanelImage, subjectBlock } from './artcheck.js';
 
 // ---------- 取得ヘルパ ----------
@@ -456,6 +456,11 @@ export async function generateEpisodeImages(
     throw new Error(`${failed.length} コマの作画に失敗しました: ${failed.join(', ')}（再実行で失敗分のみ再作画されます）`);
   }
   db.prepare("UPDATE episodes SET status = 'rendered' WHERE id = ?").run(episodeId);
-  safeSync(rowToEpisode(db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as any).projectId);
+  const renderedProjectId = rowToEpisode(db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as any).projectId;
+  safeSync(renderedProjectId);
+  // 作画済みの話は必ず書庫に要約がある状態にする（ネーム時の登録が失敗・無効だった場合の保険）
+  if (process.env.ARCHIVE_AUTO_REGISTER !== '0' && !getArchiveInfo(renderedProjectId).episodes.find((a) => a.episodeId === episodeId)?.hasSummary) {
+    try { await registerEpisode(episodeId); } catch (e) { console.warn('[archive] 書庫への登録に失敗しました:', (e as Error).message); }
+  }
   return listPanels(episodeId);
 }

@@ -26,6 +26,8 @@ export interface TalkState {
   inputHint: string;
   lastMessage: string;
   history: { role: 'user' | 'npc'; text: string }[];
+  /** 直前に受け取った提案（「案Nを構成に反映する」で使う） */
+  proposals?: { title: string; detail: string; instruction: string }[];
 }
 
 interface Props {

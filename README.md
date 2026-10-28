@@ -31,7 +31,7 @@ data/series/<id>-<作品名>/
   meetings/*.md        AI編集会議のログ
 ```
 
-- ネーム生成が終わると自動で「書庫へ登録」（要約生成 → 連載メモ更新）される（`ARCHIVE_AUTO_REGISTER=0` で無効）
+- ネーム生成が終わると自動で「書庫へ登録」（要約生成 → 連載メモ更新）される（`ARCHIVE_AUTO_REGISTER=0` で無効）。作画が終わった時点で要約がなければそこでも登録する
 - Claude CLI は作品フォルダを作業ディレクトリにして起動し、読み取りツール（Read/Glob/Grep）だけ許可される。
   プロンプトに載せきれない過去話の脚本を Claude 自身が確認できる（`SERIES_FILE_ACCESS=0` で無効）
 - UI の「書庫」画面で bible.md / summary.md を直接編集でき、次の生成から反映される
@@ -80,6 +80,11 @@ API: `POST /api/uploads {dataUrl,name}`, `POST /api/backgrounds/:id/photos {urls
   次にメニュー（部屋に入る / 相談する・要望を伝える / また今度）
 - 「相談する」はテキスト入力。NPC の役割（編集長・脚本家・漫画家・書庫番…）で Claude が答え、
   構成を変える要望なら「その内容を構成に反映する」が出る（既存の `apply-change` を呼ぶ）。API: `POST /api/projects/:id/talk`
+- 相談・提案のとき NPC が知っているもの: あらすじ・全話の要約・伏線に加えて、**人物の外見と性格・登録済みの場所・担当中の話のシーン構成とネーム本文**、
+  それに書庫の連載メモと各話の要約（書庫フォルダがあれば Claude がファイルを直接読むこともできる）。
+- **提案**: 編集長・脚本家に「次の展開を提案してもらう」「気になる点を聞く」、進行担当に「伏線の回収案を聞く」。
+  役割の観点で 3 案（見出し・内容・反映用の指示文）が返り、編集長・脚本家・進行担当の案は「案Nを構成に反映する」でそのまま構成へ反映できる。
+  API: `POST /api/projects/:id/propose {npcId, mode: 'next'|'review', episodeId?}`
 - 作業中のジョブは NPC の頭上に「作業中…」と出る
 - ドット絵は 16×24 の人物（3方向×歩行2フレーム、髪型・服色・眼鏡をレイヤー合成）と陰影付き 16×16 タイル。
   `apps/web/src/office/art/` に文字列で定義しており、差し替えや追加はそこを編集する
@@ -180,7 +185,7 @@ apps/
     src/engines/  story（構成/キャラ/ネーム/作画）, foreshadow, discussion, changes,
                   jobs（非同期ジョブ基盤）, visual（参照画像・背景・LoRA学習）,
                   archive（書庫: Markdown フォルダの書き出し・要約・連載メモ・生成用文脈）,
-                  talk（オフィスの NPC との相談。役割別ペルソナ）
+                  talk（オフィスの NPC との相談・提案。役割別ペルソナ）
   web/      React + Vite フロントエンド
     src/office/      RPG 風オフィス（マップ・NPC・部屋ダイアログ）
     src/components/  WorkflowStepper, JobProgress, RefImageStudio, LoraStudio, PageViewer, PageState

@@ -1,6 +1,7 @@
 import { extractJson, getLLMClient } from '../llm/index.js';
-import { talkPrompt } from '../prompts.js';
-import { getProject, listCharacters, listEpisodes, listForeshadowings } from './story.js';
+import { proposePrompt, talkDetailSection, talkPrompt } from '../prompts.js';
+import { getProject, listCharacters, listEpisodes, listForeshadowings, listPanels } from './story.js';
+import { listBackgrounds } from './visual.js';
 import { archiveDir, buildSeriesContext } from './archive.js';
 import { existsSync } from 'node:fs';
 
@@ -61,7 +62,15 @@ export const NPC_PERSONAS: Record<string, { name: string; system: string; canApp
   },
 };
 
-export async function talkToNpc(projectId: number, npcId: string, message: string, history: TalkTurn[] = []): Promise<TalkResult> {
+/** 相談・提案で渡す作品の中身。担当中の話（episodeId）があればそのシーン構成とネームも */
+export function talkDetail(projectId: number, episodeId?: number | null): string {
+  const episodes = listEpisodes(projectId);
+  const ep = episodeId ? episodes.find((e) => e.id === episodeId) ?? null : null;
+  const focus = ep ? { episode: ep, panels: ep.status === 'paneled' || ep.status === 'rendered' ? listPanels(ep.id) : [] } : null;
+  return talkDetailSection(listCharacters(projectId), listBackgrounds(projectId), focus);
+}
+
+export async function talkToNpc(projectId: number, npcId: string, message: string, history: TalkTurn[] = [], episodeId?: number | null): Promise<TalkResult> {
   const persona = NPC_PERSONAS[npcId];
   if (!persona) throw new Error(`相談に対応していない相手です: ${npcId}`);
   const project = getProject(projectId);
@@ -71,7 +80,7 @@ export async function talkToNpc(projectId: number, npcId: string, message: strin
   const text = await getLLMClient().complete({
     task: 'talk',
     system: persona.system,
-    prompt: talkPrompt(project, persona, listEpisodes(projectId), listCharacters(projectId), listForeshadowings(projectId), context, history.slice(-8), message),
+    prompt: talkPrompt(project, persona, listEpisodes(projectId), listCharacters(projectId), listForeshadowings(projectId), context, history.slice(-8), message, talkDetail(projectId, episodeId)),
     cwd: existsSync(dir) ? dir : undefined,
   });
   try {
@@ -82,4 +91,32 @@ export async function talkToNpc(projectId: number, npcId: string, message: strin
   } catch {
     return { reply: text.trim(), action: null };
   }
+}
+
+// ---------- NPC からの提案 ----------
+
+export type ProposeMode = 'next' | 'review';
+export interface Proposal { title: string; detail: string; instruction: string }
+export interface ProposeResult { reply: string; proposals: Proposal[]; canApply: boolean }
+
+/** NPC に「次の展開」「気になる点」を提案してもらう。構成に反映できる役割なら各案に反映用の指示文が付く */
+export async function proposeFromNpc(projectId: number, npcId: string, mode: ProposeMode, episodeId?: number | null): Promise<ProposeResult> {
+  const persona = NPC_PERSONAS[npcId];
+  if (!persona) throw new Error(`提案に対応していない相手です: ${npcId}`);
+  const project = getProject(projectId);
+  const context = buildSeriesContext(projectId, { includePreviousScript: false, maxChars: 9000 });
+  const dir = archiveDir(project);
+  const text = await getLLMClient().complete({
+    task: 'propose',
+    system: persona.system,
+    prompt: proposePrompt(project, persona, mode, listEpisodes(projectId), listCharacters(projectId), listForeshadowings(projectId), context, talkDetail(projectId, episodeId)),
+    cwd: existsSync(dir) ? dir : undefined,
+  });
+  const out = extractJson<{ reply?: string; proposals?: Partial<Proposal>[] }>(text);
+  const proposals = (out.proposals ?? [])
+    .map((p) => ({ title: (p.title ?? '').trim(), detail: (p.detail ?? '').trim(), instruction: (p.instruction ?? '').trim() }))
+    .filter((p) => p.title || p.detail)
+    .slice(0, 4);
+  if (!proposals.length) throw new Error('提案を受け取れませんでした');
+  return { reply: (out.reply ?? '').trim(), proposals, canApply: persona.canApply };
 }
