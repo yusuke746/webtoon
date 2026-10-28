@@ -6,3 +6,5 @@ data/images/
 .env.local
 *.log
 .DS_Store
+# 書庫の画像コピーは容量が大きいので除外（Markdown は Git 管理できる）
+data/series/**/images/

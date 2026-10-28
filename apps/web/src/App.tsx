@@ -14,6 +14,7 @@ import { DiscussionsPage } from './pages/DiscussionsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ArchivePage } from './pages/ArchivePage';
+import { OfficeLayout } from './office/OfficeLayout';
 
 /**
  * サイドバー。
@@ -31,6 +32,11 @@ function Sidebar() {
     <nav className="sidebar">
       <div className="brand">AI漫画スタジオ</div>
       <div className="brand-sub">連載対応・伏線回収エンジン搭載</div>
+
+      <button className="sidebar-switch"
+        onClick={() => { localStorage.removeItem('ui:classic'); window.location.reload(); }}>
+        🏢 オフィス表示へ
+      </button>
 
       <NavLink to="/" end><span className="ico">📚</span>作品一覧</NavLink>
       <NavLink to="/assets"><span className="ico">🗂</span>アセットライブラリ</NavLink>
@@ -59,13 +65,31 @@ function Sidebar() {
   );
 }
 
-function Layout({ children }: { children: React.ReactNode }) {
+function ClassicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="layout">
       <Sidebar />
       <main className="main">{children}</main>
     </div>
   );
+}
+
+const isClassic = () => localStorage.getItem('ui:classic') === '1';
+
+/**
+ * 画面の「殻」。既定は RPG 風オフィス（マップ + 部屋ダイアログ）。
+ * localStorage の ui:classic=1 で従来のサイドバー表示に切り替えられる。
+ */
+function Layout({ children }: { children: React.ReactNode }) {
+  if (isClassic()) return <ClassicLayout>{children}</ClassicLayout>;
+  return <OfficeLayout>{children}</OfficeLayout>;
+}
+
+/** マップのみのルート。クラシック表示ではダッシュボード/作品一覧へ寄せる */
+function OfficeBase() {
+  const { projectId } = useParams();
+  if (isClassic()) return <Navigate to={projectId ? `/projects/${projectId}` : '/'} replace />;
+  return <Layout>{null}</Layout>;
 }
 
 /** 旧URL（/episodes/:id）からシーン構成ステップへ寄せる */
@@ -79,6 +103,9 @@ export function App() {
 
   return (
     <Routes>
+      <Route path="/office" element={<OfficeBase />} />
+      <Route path="/projects/:projectId/office" element={<OfficeBase />} />
+
       <Route path="/" element={page(<ProjectListPage />)} />
       <Route path="/assets" element={page(<AssetsPage />)} />
 

@@ -36,6 +36,24 @@ data/series/<id>-<作品名>/
   プロンプトに載せきれない過去話の脚本を Claude 自身が確認できる（`SERIES_FILE_ACCESS=0` で無効）
 - UI の「書庫」画面で bible.md / summary.md を直接編集でき、次の生成から反映される
 
+## UI: RPG 風オフィス（編集部ビル）
+
+画面はドット絵の「編集部ビル」で、サイドバーの代わりにフロアマップを歩いて NPC に話しかける。
+マップは移動と選択だけを担当し、話しかけると従来のページが «部屋の中身» としてダイアログで開く（URL は従来のまま）。
+
+| 階 | 部屋 | NPC → 開くページ |
+| -- | ---- | ---------------- |
+| 4F | 会議室 | AI編集会議 → AI議論 |
+| 3F | 作画室 | 漫画家 → ネーム・作画（直近に開いた話） / 画材担当 → 画風・カスタマイズ |
+| 2F | 脚本室・資料室 | 脚本家 → 制作フロー（エピソード選択・シーン構成） / 設定担当 → キャラクター / ロケハン担当 → 背景 |
+| 1F | 編集部 | 受付 → 作品一覧（担当作品の選択） / 編集長 → ダッシュボード |
+| B1 | 書庫 | 連載マネージャー → 書庫（連載アーカイブ） / 伏線ボード → 伏線 / アセット倉庫 → ライブラリ |
+
+- 矢印キー/WASD で移動、Enter/Space で会話、クリックで歩いて話しかける。階段に乗ると上下階へ
+- 作業中のジョブは NPC の頭上に「作業中…」と出る
+- ヘッダの「クラシック表示」で従来のサイドバー UI に切り替えられる（`localStorage` の `ui:classic`）
+- 実装は `apps/web/src/office/`（`sprites.ts` ドット絵 / `floors.ts` フロア定義 / `OfficeMap.tsx` / `OfficeLayout.tsx`）
+
 ## 制作フロー
 
 ```
@@ -102,8 +120,9 @@ apps/
                   jobs（非同期ジョブ基盤）, visual（参照画像・背景・LoRA学習）,
                   archive（書庫: Markdown フォルダの書き出し・要約・連載メモ・生成用文脈）
   web/      React + Vite フロントエンド
-    src/components/  WorkflowStepper, JobProgress, RefImageStudio, LoraStudio, PageViewer
-    src/pages/       ダッシュボード / 制作フロー4画面 / キャラ / 背景 / 伏線 / AI議論 / 設定
+    src/office/      RPG 風オフィス（マップ・NPC・部屋ダイアログ）
+    src/components/  WorkflowStepper, JobProgress, RefImageStudio, LoraStudio, PageViewer, PageState
+    src/pages/       ダッシュボード / 制作フロー4画面 / キャラ / 背景 / 伏線 / AI議論 / 設定 / 書庫
 packages/
   shared/   ドメイン型定義（サーバー・フロント共通）
 ```
