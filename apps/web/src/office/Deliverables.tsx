@@ -23,15 +23,27 @@ export function ScenesView({ episode }: { episode: Episode }) {
 }
 
 export function PagesView({ episode, rules }: { episode: EpisodeWithPanels; rules: PanelRules }) {
+  const checked = episode.panels.filter((p) => p.checkStatus === 'pass' || p.checkStatus === 'fail');
+  const fails = episode.panels.filter((p) => p.checkStatus === 'fail');
   return (
     <div>
-      <h4>第{episode.number}話「{episode.title}」 {episode.panels.length}コマ</h4>
+      <h4>
+        第{episode.number}話「{episode.title}」 {episode.panels.length}コマ
+        {checked.length > 0 && (
+          <span className={`muted`} style={{ marginLeft: 10, fontWeight: 500 }}>
+            設定担当のチェック: {checked.length - fails.length}/{checked.length} OK{fails.length ? `、${fails.length}コマに指摘` : ''}
+          </span>
+        )}
+      </h4>
       <div className="pages">
         <PageViewer panels={episode.panels} rules={rules} />
         <div className="dialogues">
           {episode.panels.map((p) => (
             <div key={p.id}>
               <strong>P{p.layout.page}-{p.index + 1}</strong> {p.description}
+              {p.checkStatus === 'pass' && <span className="badge ok" style={{ marginLeft: 6 }}>監修OK</span>}
+              {p.checkStatus === 'fail' && <span className="badge danger" style={{ marginLeft: 6 }}>要確認</span>}
+              {p.checkStatus === 'fail' && p.checkNotes && <div className="check-notes">{p.checkNotes}</div>}
               {p.dialogues.map((d, i) => <div key={i} className="muted">　【{d.speaker}】{d.text}</div>)}
             </div>
           ))}

@@ -74,8 +74,10 @@ export interface Character {
   personality: string;
   /** 画像生成時に一貫性維持へ使う参照画像URL */
   refImageUrl: string | null;
-  /** キャラ専用LoRAのURL/識別子 */
+  /** キャラ専用LoRAのURL/識別子（任意。既定の一貫性手段は参照画像 + 固定文 + 作画チェック） */
   loraUrl: string | null;
+  /** 絵の指示用の固定文（英語）。全コマで同じ文言を画像プロンプトに置く。Claude が一度だけ生成 */
+  visualPrompt: string | null;
   /** ライブラリからキャスティングした場合の元アセットID */
   sourceAssetId: number | null;
   createdAt: string;
@@ -180,7 +182,13 @@ export interface Panel {
   /** 背景ID（背景の参照画像/LoRAの解決に使用。未設定なら null） */
   backgroundId: number | null;
   status: PanelStatus;
+  /** 作画チェック（Claude が画像を見て設定と照合）の結果 */
+  checkStatus: PanelCheckStatus;
+  /** 指摘内容（改行区切り） */
+  checkNotes: string | null;
 }
+
+export type PanelCheckStatus = 'none' | 'pass' | 'fail' | 'skipped';
 
 // ---------- AI議論 ----------
 
@@ -223,8 +231,10 @@ export interface Background {
   description: string;
   /** 画像生成時に一貫性維持へ使う参照画像URL */
   refImageUrl: string | null;
-  /** 背景専用LoRAのURL/識別子 */
+  /** 背景専用LoRAのURL/識別子（任意） */
   loraUrl: string | null;
+  /** 絵の指示用の固定文（英語） */
+  visualPrompt: string | null;
   sourceAssetId: number | null;
   createdAt: string;
 }

@@ -18,6 +18,8 @@ export interface ImageRequest {
   backgroundRefImageUrl?: string | null;
   /** アスペクト比（例: "3:4"） */
   aspectRatio?: string;
+  /** ネガティブプロンプト（対応モデルのみ渡す。flux 系は無視される） */
+  negativePrompt?: string;
   /** モデル固有の追加入力 */
   extraInput?: Record<string, unknown>;
 }

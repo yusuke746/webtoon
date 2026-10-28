@@ -161,21 +161,25 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     return route;
   }, [projectId, focusId]);
 
-  /** 成果物の表示を用意する（原稿は取得が要るので非同期） */
-  const buildContent = useCallback(async (kind: Delivery['kind'], ep: Episode | null, countBefore?: number): Promise<React.ReactNode> => {
+  /** 成果物の表示を用意する（原稿は取得が要るので非同期）。作画チェックの指摘数も返す */
+  const buildContent = useCallback(async (kind: Delivery['kind'], ep: Episode | null, countBefore?: number): Promise<{ content: React.ReactNode; fails: number }> => {
     if (kind === 'structure') {
       const eps = status?.episodes ?? [];
       const added = countBefore !== undefined ? eps.slice(countBefore) : eps.slice(-2);
-      return <EpisodesView episodes={added.length ? added : eps} title="新しい話の構成" />;
+      return { content: <EpisodesView episodes={added.length ? added : eps} title="新しい話の構成" />, fails: 0 };
     }
-    if (!ep) return null;
-    if (kind === 'scenes') return <ScenesView episode={ep} />;
+    if (!ep) return { content: null, fails: 0 };
+    if (kind === 'scenes') return { content: <ScenesView episode={ep} />, fails: 0 };
     if ((kind === 'panels' || kind === 'images') && rules) {
       const full = await api.getEpisode(ep.id);
-      return <PagesView episode={full} rules={rules} />;
+      return { content: <PagesView episode={full} rules={rules} />, fails: full.panels.filter((p) => p.checkStatus === 'fail').length };
     }
-    return null;
+    return { content: null, fails: 0 };
   }, [status, rules]);
+
+  /** 指摘のあるコマがあれば「描き直してもらう」を選択肢の先頭に足す */
+  const withRedraw = (choices: Choice[], fails: number): Choice[] =>
+    fails > 0 ? [{ key: 'images:redraw', label: `指摘のある ${fails} コマを描き直してもらう` }, ...choices] : choices;
 
   const startTalk = useCallback((npc: Npc) => {
     const busy = busyNpcIds.has(npc.id);
@@ -190,8 +194,8 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (plan.deliver) {
       const ep = status?.episodes.find((e) => e.id === plan.deliver!.episodeId) ?? null;
       if (ep) setFocus(ep.id);
-      buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore).then((content) =>
-        setTalk((t) => (t && t.npc.id === npc.id ? { ...t, content } : t)));
+      buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore).then(({ content, fails }) =>
+        setTalk((t) => (t && t.npc.id === npc.id ? { ...t, content, choices: withRedraw(t.choices, fails) } : t)));
     }
   }, [busyNpcIds, deliveries, status, focus, buildContent, setFocus]);
 
@@ -215,8 +219,9 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   const showDeliver = useCallback(async (kind: Delivery['kind'], ep: Episode, choices: Choice[]) => {
-    const content = await buildContent(kind, ep);
-    setTalk((t) => t && { ...t, phase: 'deliver', content, choices, reply: null });
+    const { content, fails } = await buildContent(kind, ep);
+    setTalk((t) => t && { ...t, phase: 'deliver', content, choices: withRedraw(choices, fails), reply: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildContent]);
 
   const choose = useCallback(async (key: string) => {
@@ -273,6 +278,14 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     if (key === 'panels:revise') { openInput('panels'); return; }
+    if (key === 'images:redraw' && focus) {
+      try {
+        const job = await api.generateEpisodeImages(focus.id, true);
+        track(job, { npcId: 'artist', kind: 'images', episodeId: focus.id, label: job.label });
+        sayAndClose(['了解、指摘のあったコマを描き直す。', '設定担当のチェックも通し直すよ。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
     if (key === 'images:generate' && focus) {
       try {
         const job = await api.generateEpisodeImages(focus.id);

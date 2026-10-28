@@ -74,7 +74,7 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       const lines = [`登場人物は ${cs.length} 人。`];
       lines.push(noRef.length
         ? `参照画像がないのは ${noRef.slice(0, 3).map((c) => c.name).join('・')}${noRef.length > 3 ? ' ほか' : ''}。ビジュアル工房で作れます。`
-        : '全員に参照画像があります。顔は安定するはずです。');
+        : '全員に参照画像があります。作画のたびに私がチェックします。');
       return lines;
     }
 

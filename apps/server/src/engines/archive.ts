@@ -144,6 +144,7 @@ function renderCharacter(c: Character, refImageRel: string | null): string {
     `- 外見: ${c.appearance || '未設定'}`,
     `- 性格・口調: ${c.personality || '未設定'}`,
     refImageRel ? `- 参照画像: ${refImageRel}` : c.refImageUrl ? `- 参照画像URL: ${c.refImageUrl}` : null,
+    c.visualPrompt ? `- 絵の固定文: ${c.visualPrompt}` : null,
     c.loraUrl ? `- LoRA: ${c.loraUrl}` : null,
   ].filter(Boolean).join('\n') + '\n';
 }

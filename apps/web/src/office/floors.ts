@@ -139,7 +139,7 @@ export const FLOORS: Floor[] = [
       {
         id: 'chara', name: '設定担当', title: '資料室・人物設定', x: 11, y: 2, room: 'キャラクター資料',
         look: { hair: '#d6a64a', cloth: '#3f8f6f', hairStyle: 'bob' },
-        route: '/projects/{p}/characters', hint: 'キャラの設定・参照画像・LoRA', jobKinds: ['characters', 'ref_images', 'lora_train'], canChat: true,
+        route: '/projects/{p}/characters', hint: 'キャラの設定・参照画像・作画チェック', jobKinds: ['characters', 'ref_images', 'lora_train'], canChat: true,
         desk: { x: 13, y: 4, facing: 'up' },
       },
       {

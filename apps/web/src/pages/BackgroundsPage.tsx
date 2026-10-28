@@ -21,7 +21,7 @@ export function BackgroundsPage() {
 
   const blank: Background = {
     id: 0, projectId, name: '', description: '',
-    refImageUrl: null, loraUrl: null, sourceAssetId: null, createdAt: '',
+    refImageUrl: null, loraUrl: null, visualPrompt: null, sourceAssetId: null, createdAt: '',
   };
 
   return (
@@ -121,9 +121,6 @@ export function BackgroundsPage() {
               <div className="tabs">
                 <button className={`tab ${tab === 'ref' ? 'active' : ''}`} onClick={() => setTab('ref')}>
                   参照画像
-                </button>
-                <button className={`tab ${tab === 'lora' ? 'active' : ''}`} onClick={() => setTab('lora')}>
-                  LoRA学習
                 </button>
               </div>
               {tab === 'ref' ? (

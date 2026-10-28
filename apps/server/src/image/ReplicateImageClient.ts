@@ -21,6 +21,10 @@ export class ReplicateImageClient implements ImageClient {
       aspect_ratio: req.aspectRatio ?? '3:4',
       ...req.extraInput,
     };
+    // negative_prompt は SD 系だけが受け取る（flux 系に渡すと「未知の入力」エラーになる）
+    if (req.negativePrompt && input.negative_prompt === undefined && /sdxl|stable-diffusion|animagine|anything|counterfeit|pony|illustrious/i.test(req.model)) {
+      input.negative_prompt = req.negativePrompt;
+    }
     // lora_weights / image は1つずつしか渡せないため、優先順位に従って1つに決める
     const { lora, referenceImage, droppedLoras } = resolveConsistencyInputs(req);
     // 作画モデル自身が学習済みLoRAモデル（owner/model:version）の場合、重みは焼き込み済みなので渡さない。

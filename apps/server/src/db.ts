@@ -189,6 +189,12 @@ function addColumnIfMissing(table: string, column: string, definition: string) {
 
 // パネルに背景を紐付ける（作画時に背景の参照画像/LoRAを渡すため）
 addColumnIfMissing('panels', 'background_id', 'INTEGER');
+// 作画チェック（Claude が画像を見て設定と照合）
+addColumnIfMissing('panels', 'check_status', "TEXT NOT NULL DEFAULT 'none'");
+addColumnIfMissing('panels', 'check_notes', 'TEXT');
+// 絵の指示用の固定文（英語）
+addColumnIfMissing('characters', 'visual_prompt', 'TEXT');
+addColumnIfMissing('backgrounds', 'visual_prompt', 'TEXT');
 
 // ---------- 行 → ドメイン型 変換 ----------
 
@@ -230,6 +236,7 @@ export function rowToCharacter(r: Row): Character {
     personality: r.personality,
     refImageUrl: r.ref_image_url,
     loraUrl: r.lora_url,
+    visualPrompt: r.visual_prompt ?? null,
     sourceAssetId: r.source_asset_id,
     createdAt: r.created_at,
   };
@@ -289,6 +296,8 @@ export function rowToPanel(r: Row): Panel {
     characterIds: JSON.parse(r.character_ids),
     backgroundId: r.background_id ?? null,
     status: r.status,
+    checkStatus: r.check_status ?? 'none',
+    checkNotes: r.check_notes ?? null,
   };
 }
 
@@ -300,6 +309,7 @@ export function rowToBackground(r: Row): Background {
     description: r.description,
     refImageUrl: r.ref_image_url,
     loraUrl: r.lora_url,
+    visualPrompt: r.visual_prompt ?? null,
     sourceAssetId: r.source_asset_id,
     createdAt: r.created_at,
   };

@@ -5,7 +5,7 @@ import {
   rowToForeshadowing, rowToPanel, rowToProject, rowToWorldview,
 } from './db.js';
 import {
-  generateCharacters, generateEpisodeImages, generatePanelImage, generatePanels,
+  generateCharacters, generateCheckedPanelImage, generateEpisodeImages, generatePanels,
   generateStructure, getProject, listCharacters, listEpisodes, listForeshadowings, listPanels,
   reviseEpisodeScenes,
 } from './engines/story.js';
@@ -168,7 +168,8 @@ router.post('/episodes/:id/generate/images', wrap((req, res) => {
   const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
   if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
   const episode = rowToEpisode(row as any);
-  const pending = listPanels(episodeId).filter((p) => p.status !== 'done');
+  const retryFailed = !!req.body?.retryFailed;
+  const pending = listPanels(episodeId).filter((p) => p.status !== 'done' || (retryFailed && p.checkStatus === 'fail'));
 
   const job = startJob(
     {
@@ -180,16 +181,19 @@ router.post('/episodes/:id/generate/images', wrap((req, res) => {
     },
     async (ctx) => {
       ctx.setResultRef(`episode:${episodeId}`);
+      let lastDone = 0;
       await generateEpisodeImages(episodeId, (done, total, label) => {
-        ctx.advance(`作画中 ${done}/${total}: ${label}`);
-      });
+        // コマが1つ終わるごとに進捗を進め、作画中/チェック中の細かい段階は step だけ更新する
+        if (done > lastDone) { lastDone = done; ctx.advance(`${done}/${total} 完了`); }
+        else ctx.setStep(`${done + 1}/${total}: ${label}`);
+      }, { retryFailed });
     },
   );
   res.status(202).json(job);
 }));
 
 router.post('/panels/:id/generate-image', wrap(async (req, res) => {
-  res.json(await generatePanelImage(id(req)));
+  res.json(await generateCheckedPanelImage(id(req)));
 }));
 
 // ============ エピソード / パネル（手動編集 → 再生成ループ） ============

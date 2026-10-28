@@ -835,3 +835,10 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .quest-empty { font-size: 12px; color: #9a93ad; }
 .npc-link .report-mark { color: #ffd866; font-weight: 900; }
 .office-side { width: 280px; }
+
+/* ---- 作画チェックの指摘 ---- */
+.check-notes {
+  margin-top: 4px; font-size: 11px; color: #b45309; background: #fff7ed; border-left: 3px solid #f59e0b;
+  padding: 4px 8px; white-space: pre-wrap; border-radius: 0 4px 4px 0;
+}
+.warn-box { border-color: #f59e0b; background: #fffbeb; }

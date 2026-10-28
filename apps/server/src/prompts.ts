@@ -156,7 +156,9 @@ ${panelRulesSection(project)}
 
 ## 依頼
 各コマについて、情景描写・セリフ・画像生成用の英語プロンプトを作成してください。
-英語プロンプトには "manga panel" とカメラワーク・構図・キャラの外見特徴を必ず含めてください。
+英語プロンプトには "manga panel" とカメラワーク・構図・キャラの表情や動きを必ず含めてください。
+キャラの外見（髪・服・体格）は別途固定文で与えるので、プロンプト内で «名前» を使って指し、外見を言い換えないでください。
+画像には文字を描かせません。英語プロンプトに看板の文字・吹き出し・擬音・ロゴ・セリフを含めないこと（セリフはアプリ側で描画します）。
 
 ${PANELS_OUTPUT_FORMAT}`;
 }
@@ -535,4 +537,75 @@ ${instruction.trim()}
   ]
 }
 ${JSON_ONLY}`;
+}
+
+// ---------- 絵の指示用の固定文 / 作画チェック ----------
+
+export function visualPromptPrompt(kind: 'character' | 'background', name: string, description: string): string {
+  const what = kind === 'character'
+    ? 'このキャラクターを «毎回同じ見た目» で描くための外見タグ列。年齢・性別・髪型・髪色・目の色・肌・体格・標準の服装と小物を、固有名詞を使わず具体的に。表情・ポーズ・構図・背景は含めない。'
+    : 'この場所を «毎回同じ構造» で描くための描写タグ列。建物の種類・内装・家具の配置・照明・時間帯の既定・雰囲気を具体的に。人物は含めない。';
+  return `あなたは漫画の作画監督です。画像生成モデルへ渡す «固定文»（英語）を1つ作ってください。全コマで同じ文言を使うので、曖昧語を避け、短く密度高く。
+
+## 目的
+${what}
+
+## 対象の名前
+${name}
+
+## 設定（日本語）
+${description || '（詳細な設定なし。名前から妥当に補完すること）'}
+
+## 制約
+- 英語のカンマ区切りタグ列のみ。日本語・説明文を混ぜない
+- 60語以内
+- 文字・ロゴ・吹き出しに関する語を入れない
+
+## 出力JSON
+{"prompt": "英語の固定文"}
+出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
+}
+
+export function artCheckPrompt(
+  panel: { description: string; imagePrompt: string; dialogues: { speaker: string; text: string }[] },
+  characters: { name: string; appearance: string; visualPrompt: string | null }[],
+  background: { name: string; description: string; visualPrompt: string | null } | null,
+  imageFile: string,
+  refImages: { name: string; file: string }[],
+  attempt: number,
+): string {
+  return `生成されたコマの画像を確認し、設定と合っているか判定してください。
+まず Read ツールで画像ファイルを開いて実際に見てください（開かずに判定しないこと）。
+
+## 確認する画像
+${imageFile}
+
+## 参照画像（キャラクター設定画。あれば必ず見比べる）
+${refImages.length ? refImages.map((r) => `- ${r.name}: ${r.file}`).join('\n') : '（なし。文章の設定だけで判定）'}
+
+## このコマの意図
+- 情景: ${panel.description}
+- 画像プロンプト: ${panel.imagePrompt}
+- 登場人物: ${characters.length ? characters.map((c) => c.name).join('・') : 'なし（人物が写っていたら不一致）'}
+
+## 登場人物の設定（これと一致していること）
+${characters.length ? characters.map((c) => `- ${c.name}: ${c.visualPrompt || c.appearance}`).join('\n') : '（なし）'}
+${background ? `\n## 舞台の設定\n- ${background.name}: ${background.visualPrompt || background.description}\n` : ''}
+## 試行
+${attempt}
+
+## 判定基準（不一致のときだけ指摘。好みや画風の良し悪しは指摘しない）
+1. 髪型・髪色・目の色・服装・小物が設定（参照画像）と違う
+2. 登場人物の人数が意図と違う、別人が混ざっている
+3. 画像内に文字・吹き出し・判読不能な記号・ロゴ・透かしが入っている（吹き出しはアプリが描くので画像に入っていたら不一致）
+4. 手や顔が明らかに破綻している
+5. 情景が意図と大きく違う（例: 夜のはずが昼）
+
+## 出力形式（JSON）
+{
+  "pass": true または false,
+  "issues": ["不一致の内容（日本語・簡潔）"],
+  "fixPrompt": "描き直し時に画像プロンプトへ追加する英語の短い指示（pass なら空文字）"
+}
+出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
 }

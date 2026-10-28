@@ -53,7 +53,7 @@ export const api = {
   generateCharacters: (projectId: number) => post<Character[]>(`/projects/${projectId}/generate/characters`),
   generatePanels: (episodeId: number) => post<Panel[]>(`/episodes/${episodeId}/generate/panels`),
   /** 一括作画は非同期。Job を返すので進捗はポーリングで追う */
-  generateEpisodeImages: (episodeId: number) => post<Job>(`/episodes/${episodeId}/generate/images`),
+  generateEpisodeImages: (episodeId: number, retryFailed = false) => post<Job>(`/episodes/${episodeId}/generate/images`, { retryFailed }),
   generatePanelImage: (panelId: number) => post<Panel>(`/panels/${panelId}/generate-image`),
 
   // エピソード / パネル

@@ -10,6 +10,7 @@ import {
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds } from './visual.js';
 import { archiveDir, buildSeriesContext, registerEpisode, syncArchive } from './archive.js';
+import { ART_CHECK_ENABLED, ART_CHECK_MAX_RETRY, NO_TEXT_NEGATIVE, NO_TEXT_PROMPT, checkPanelImage, subjectBlock } from './artcheck.js';
 
 // ---------- 取得ヘルパ ----------
 
@@ -313,7 +314,29 @@ export function listPanels(episodeId: number): Panel[] {
 
 // ---------- 作画（画像生成） ----------
 
-export async function generatePanelImage(panelId: number): Promise<Panel> {
+/**
+ * 1コマを作画し、作画チェック（Claude が画像を見る）に通るまで描き直す。
+ * 上限回数を超えたら最後の結果を «要確認（fail）» として残し、編集が判断する。
+ */
+export async function generateCheckedPanelImage(panelId: number, onStep?: (label: string) => void): Promise<Panel> {
+  let fixHint = '';
+  const maxAttempts = ART_CHECK_ENABLED ? 1 + ART_CHECK_MAX_RETRY : 1;
+  let panel: Panel | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    onStep?.(attempt === 1 ? '作画中' : `描き直し ${attempt - 1}/${ART_CHECK_MAX_RETRY}`);
+    panel = await generatePanelImage(panelId, fixHint);
+    if (!ART_CHECK_ENABLED) break;
+    onStep?.('設定担当がチェック中');
+    const result = await checkPanelImage(panelId, attempt);
+    if (result.status !== 'fail') break;
+    fixHint = result.fixPrompt;
+    console.log(`[art] コマ ${panelId} 不一致（${attempt}回目）: ${result.issues.join(' / ')}`);
+  }
+  // チェック結果（check_status / check_notes）を含めて返す
+  return rowToPanel(db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId) as any);
+}
+
+export async function generatePanelImage(panelId: number, fixHint = ''): Promise<Panel> {
   const row = db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId);
   if (!row) throw new Error(`パネルが見つかりません: ${panelId}`);
   const panel = rowToPanel(row as any);
@@ -332,10 +355,14 @@ export async function generatePanelImage(panelId: number): Promise<Panel> {
     ? listBackgrounds(episode.projectId).find((b) => b.id === panel.backgroundId) ?? null
     : null;
 
-  db.prepare("UPDATE panels SET status = 'generating' WHERE id = ?").run(panelId);
+  // 登場人物・舞台の固定文を先頭に置く（全コマで同じ文言 → 見た目がブレにくい）
+  const subjects = await subjectBlock(panelChars, background);
+
+  db.prepare("UPDATE panels SET status = 'generating', check_status = 'none', check_notes = NULL WHERE id = ?").run(panelId);
   try {
     const result = await getImageClient().generate({
-      prompt: [style?.stylePrompt, panel.imagePrompt].filter(Boolean).join(', '),
+      prompt: [style?.stylePrompt, subjects, panel.imagePrompt, fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', '),
+      negativePrompt: NO_TEXT_NEGATIVE,
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',
       styleLoraUrl: style?.loraUrl,
       characterLoraUrls: panelChars.map((c) => c.loraUrl).filter((u): u is string => !!u),
@@ -381,9 +408,11 @@ function panelAspectRatio(panel: Panel, project: Project): string {
 export async function generateEpisodeImages(
   episodeId: number,
   onProgress?: (done: number, total: number, label: string) => void,
+  options: { retryFailed?: boolean } = {},
 ): Promise<Panel[]> {
   const panels = listPanels(episodeId);
-  const pending = panels.filter((p) => p.status !== 'done');
+  // retryFailed: 作画チェックで «要確認» になったコマも描き直す
+  const pending = panels.filter((p) => p.status !== 'done' || (options.retryFailed && p.checkStatus === 'fail'));
   let done = 0;
   const failed: string[] = [];
   for (const p of pending) {
@@ -393,7 +422,7 @@ export async function generateEpisodeImages(
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
-        await generatePanelImage(p.id);
+        await generateCheckedPanelImage(p.id, (step) => onProgress?.(done, pending.length, `${label} ${step}`));
         break;
       } catch (e) {
         if (attempt >= MAX_ATTEMPTS) {

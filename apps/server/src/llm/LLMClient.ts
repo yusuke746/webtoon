@@ -16,7 +16,9 @@ export type LLMTask =
   | 'summarize'      // 汎用要約（話の要約など）
   | 'archive'        // 連載メモ（シリーズバイブル）の更新
   | 'talk'           // オフィスの NPC との相談
-  | 'revise_scenes'; // 指示に沿ったシーン構成の書き直し
+  | 'revise_scenes'  // 指示に沿ったシーン構成の書き直し
+  | 'visual_prompt'  // 絵の指示用の固定文（英語）
+  | 'art_check';     // 作画チェック（画像を見て設定と照合）
 
 export interface LLMRequest {
   task: LLMTask;

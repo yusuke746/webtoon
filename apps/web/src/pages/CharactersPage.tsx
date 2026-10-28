@@ -27,7 +27,7 @@ export function CharactersPage() {
 
   const blank: Character = {
     id: 0, projectId, name: '', role: '', appearance: '', personality: '',
-    refImageUrl: null, loraUrl: null, sourceAssetId: null, createdAt: '',
+    refImageUrl: null, loraUrl: null, visualPrompt: null, sourceAssetId: null, createdAt: '',
   };
 
   /** 編集/新規フォーム。呼び出し位置でカード直下 or 一覧先頭に描画する */
@@ -152,9 +152,6 @@ export function CharactersPage() {
               <div className="tabs">
                 <button className={`tab ${tab === 'ref' ? 'active' : ''}`} onClick={() => setTab('ref')}>
                   参照画像
-                </button>
-                <button className={`tab ${tab === 'lora' ? 'active' : ''}`} onClick={() => setTab('lora')}>
-                  LoRA学習
                 </button>
               </div>
               {tab === 'ref' ? (

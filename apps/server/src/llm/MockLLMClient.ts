@@ -188,6 +188,20 @@ export class MockLLMClient implements LLMClient {
           '- 各話の最終コマは必ず引きで終える',
         ].join('\n');
 
+      case 'visual_prompt': {
+        const name = req.prompt.match(/## 対象の名前\n(.*)/)?.[1] ?? 'subject';
+        return JSON.stringify({ prompt: `${name}, 16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)` });
+      }
+
+      case 'art_check': {
+        // 1回目は不一致、2回目以降は合格（描き直しループの動作確認用）
+        const attempt = Number(req.prompt.match(/## 試行\n(\d+)/)?.[1] ?? 1);
+        if (attempt <= 1) {
+          return JSON.stringify({ pass: false, issues: ['髪の色が設定（黒）と違い、茶色に見える', '画面右下に判読できない文字が入っている'], fixPrompt: 'black hair, no text' });
+        }
+        return JSON.stringify({ pass: true, issues: [], fixPrompt: '' });
+      }
+
       case 'revise_scenes': {
         const m = req.prompt.match(/## 担当編集からの指示\n([\s\S]*?)\n\n## 出力形式/);
         const inst = m?.[1]?.trim() ?? '';
