@@ -250,6 +250,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `LLM_CLIENT`                 | `claude`                         | `claude`（CLI サブプロセス） / `mock`（開発用）                       |
 | `CLAUDE_CLI_PATH`            | `claude`                         | Claude CLI のパス                                                         |
 | `CLAUDE_CLI_MODEL`           | (CLI 既定)                         | `--model` に渡すモデル名                                                |
+| `CLAUDE_CLI_EFFORT`          | `low`                            | CLI の推論量 (`low` / `medium` / `high`)                                |
 | `LLM_TIMEOUT_MS`             | `300000`                         | CLI 呼び出しのタイムアウト                                                |
 | `DISCUSSION_ROUNDS`          | `2`                              | AI議論のラウンド数                                                        |
 | `IMAGE_CLIENT`               | 自動                               | `replicate` / `mock`（`REPLICATE_API_TOKEN` 未設定時は自動で mock） |
@@ -263,6 +264,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `SERIES_DIR`                 | `<DATA_DIR>/series`              | 書庫（連載アーカイブ）の保存先                                            |
 | `ARCHIVE_AUTO_REGISTER`      | `1`                              | `0` でネーム生成後の自動登録（要約・連載メモ更新）を止める                 |
 | `SERIES_FILE_ACCESS`         | `1`                              | `0` で Claude CLI の書庫フォルダ読み取り（Read/Glob/Grep）を止める         |
+| `CLAUDE_CLI_FILE_TURNS`      | `8`                              | 書庫フォルダを読ませる呼び出しの最大ターン数（読み取りなしは常に 1）        |
 | `ART_CHECK`                  | `1`                              | `0` で作画チェック（Claude が画像を見て設定と照合）を止める                 |
 | `ART_CHECK_MAX_RETRY`        | `2`                              | 作画チェックで不一致だったときの描き直し回数                               |
 | `DESIGN_CANDIDATES`          | `4`                              | 設定画づくりで1人あたり描く候補の枚数                                       |

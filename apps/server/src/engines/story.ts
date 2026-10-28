@@ -336,6 +336,19 @@ export async function generateCheckedPanelImage(panelId: number, onStep?: (label
   return rowToPanel(db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId) as any);
 }
 
+/**
+ * コマの画像プロンプトを組み立てる。
+ * 画風 → 登場人物・舞台の固定文 → コマの指示 → 描き直しの指摘 → 「文字を描かない」固定文、の順。
+ * セリフと吹き出しは後工程でアプリが重ねるので、画像には文字を描かせず、縁に余白を残させる。
+ */
+export function buildPanelImagePrompt(
+  stylePrompt: string | undefined,
+  imagePrompt: string,
+  parts: { subjects?: string; fixHint?: string } = {},
+): string {
+  return [stylePrompt, parts.subjects, imagePrompt, parts.fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', ');
+}
+
 export async function generatePanelImage(panelId: number, fixHint = ''): Promise<Panel> {
   const row = db.prepare('SELECT * FROM panels WHERE id = ?').get(panelId);
   if (!row) throw new Error(`パネルが見つかりません: ${panelId}`);
@@ -371,7 +384,7 @@ export async function generatePanelImage(panelId: number, fixHint = ''): Promise
   db.prepare("UPDATE panels SET status = 'generating', check_status = 'none', check_notes = NULL WHERE id = ?").run(panelId);
   try {
     const result = await getImageClient().generate({
-      prompt: [style?.stylePrompt, subjects, panel.imagePrompt, fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', '),
+      prompt: buildPanelImagePrompt(style?.stylePrompt, panel.imagePrompt, { subjects, fixHint }),
       negativePrompt: NO_TEXT_NEGATIVE,
       referenceSheets,
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',

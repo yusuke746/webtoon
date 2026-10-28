@@ -16,7 +16,7 @@ import { artCheckPrompt, visualPromptPrompt } from '../prompts.js';
  */
 
 /** 文字・吹き出しを画像に描かせないための共通指示（吹き出しはアプリが描く） */
-export const NO_TEXT_PROMPT = 'no text, no letters, no speech bubbles, no captions, no watermark, no signature';
+export const NO_TEXT_PROMPT = 'clean illustration only, no text, no letters, no words, no speech bubbles, no dialogue balloons, no captions, no sound effects, no logos, no watermarks, no signature, leave clear negative space around the edges for dialogue overlays';
 export const NO_TEXT_NEGATIVE = 'text, letters, words, speech bubble, caption, subtitle, watermark, signature, logo, extra fingers, deformed hands';
 
 export const ART_CHECK_ENABLED = process.env.ART_CHECK !== '0';

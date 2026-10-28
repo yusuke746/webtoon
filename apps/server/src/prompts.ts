@@ -158,7 +158,7 @@ ${panelRulesSection(project)}
 各コマについて、情景描写・セリフ・画像生成用の英語プロンプトを作成してください。
 英語プロンプトには "manga panel" とカメラワーク・構図・キャラの表情や動きを必ず含めてください。
 キャラの外見（髪・服・体格）は別途固定文で与えるので、プロンプト内で «名前» を使って指し、外見を言い換えないでください。
-画像には文字を描かせません。英語プロンプトに看板の文字・吹き出し・擬音・ロゴ・セリフを含めないこと（セリフはアプリ側で描画します）。
+画像には後工程でセリフと吹き出しを重ねるため、imagePrompt には文字、看板の文字、吹き出し、字幕、擬音、ロゴ、透かし、セリフを描く指示を含めないでください。
 
 ${PANELS_OUTPUT_FORMAT}`;
 }
@@ -189,7 +189,7 @@ const PANELS_OUTPUT_FORMAT = `## 出力形式（JSON）
       "layout": {"page": ページ番号, "x": 0, "y": 0, "w": 4, "h": 2},
       "description": "情景・構図の日本語説明",
       "dialogues": [{"speaker": "話者名", "text": "セリフ", "kind": "speech|thought|narration|sfx", "position": "top-right"}],
-      "imagePrompt": "english prompt for image generation",
+      "imagePrompt": "english visual-only prompt; no text, speech bubbles, captions, sound effects, logos, or watermarks",
       "characters": ["このコマに登場するキャラ名"],
       "background": "登録済み背景の名前。該当なしなら null"
     }
