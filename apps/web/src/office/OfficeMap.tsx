@@ -21,6 +21,8 @@ interface Props {
   disabledNpcIds: Set<string>;
   /** 報告待ち（頼んだ仕事が終わった）NPC */
   reportNpcIds: Set<string>;
+  /** 会議などで頭上に出す吹き出し（NPC id → 文言） */
+  bubbles?: Record<string, { text: string; kind: 'say' | 'think' }>;
 }
 
 const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -30,7 +32,7 @@ const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
  * 移動は 矢印/WASD、会話は Enter/Space/E。クリックでも歩いて話しかけられる。
  */
 export function OfficeMap({
-  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds,
+  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds, bubbles,
 }: Props) {
   const rows = floor.map.length;
   const cols = floor.map[0].length;
@@ -173,8 +175,8 @@ export function OfficeMap({
   const npcFacing = (n: Npc): Facing => {
     const q = posOf(n);
     if (busyNpcIds.has(n.id) && n.desk) return n.desk.facing;
-    if (dist(q, player) !== 1) return 'down';
-    return facingOf(player.x - q.x, player.y - q.y, 'down');
+    if (dist(q, player) !== 1) return n.idleFacing ?? 'down';
+    return facingOf(player.x - q.x, player.y - q.y, n.idleFacing ?? 'down');
   };
 
   const actorStyle = (x: number, y: number) => ({ left: x * PX + (PX - AW) / 2, top: y * PX + PX - AH + 2 });
@@ -214,9 +216,10 @@ export function OfficeMap({
             <div className="shadow" />
             <div className="sprite" style={{ backgroundImage: `url(${actorUrl(n.look, facing, 0)})` }} />
             <div className="name">{n.name}</div>
-            {busy && <div className="bubble">作業中…</div>}
-            {!busy && reportNpcIds.has(n.id) && <div className="bubble report">!</div>}
-            {!busy && active && dist(player, q) === 1 && <div className="bubble key">Enter</div>}
+            {bubbles?.[n.id] && <div className={`bubble ${bubbles[n.id].kind}`}>{bubbles[n.id].text}</div>}
+            {!bubbles?.[n.id] && busy && <div className="bubble">{n.participant ? '…' : '作業中…'}</div>}
+            {!bubbles?.[n.id] && !busy && reportNpcIds.has(n.id) && <div className="bubble report">!</div>}
+            {!bubbles?.[n.id] && !busy && active && dist(player, q) === 1 && <div className="bubble key">Enter</div>}
           </div>
         );
       })}

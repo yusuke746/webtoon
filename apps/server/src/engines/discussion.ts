@@ -6,6 +6,8 @@ import {
   DISCUSSION_ROLES, consensusPrompt, discussionTurnPrompt, projectContextSummary,
 } from '../prompts.js';
 import { getProject, listCharacters, listEpisodes, listForeshadowings } from './story.js';
+import { buildSeriesContext } from './archive.js';
+import { talkDetail } from './talk.js';
 
 /**
  * AI同士の議論エンジン。
@@ -96,12 +98,13 @@ export function intervene(discussionId: number, userComment: string): { discussi
 async function runRounds(discussionId: number, startRound: number, count: number, ctx?: JobContext) {
   const discussion = getDiscussion(discussionId);
   const project = getProject(discussion.projectId);
-  const context = projectContextSummary(
-    project,
-    listEpisodes(project.id),
-    listCharacters(project.id),
-    listForeshadowings(project.id),
-  );
+  // 要約だけでなく、人物・場所・各話の中身と書庫の連載メモも踏まえて議論する
+  const series = buildSeriesContext(project.id, { includePreviousScript: false, maxChars: 6000 });
+  const context = [
+    projectContextSummary(project, listEpisodes(project.id), listCharacters(project.id), listForeshadowings(project.id)),
+    talkDetail(project.id),
+    series ? `### 連載アーカイブ（連載マネージャーより）\n${series}` : '',
+  ].filter(Boolean).join('\n\n');
   const llm = getLLMClient();
 
   for (let round = startRound; round < startRound + count; round++) {

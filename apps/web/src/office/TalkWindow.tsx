@@ -111,7 +111,7 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
         )}
         {talk.phase === 'input' && (
           <div className="talk-input" onClick={(e) => e.stopPropagation()}>
-            <div className="muted">{talk.inputPurpose === 'chat' ? '要望・質問を書いてください' : '直してほしい点を書いてください'}（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
+            <div className="muted">{talk.inputPurpose === 'chat' ? '要望・質問を書いてください' : talk.inputPurpose === 'topic' ? '議題を書いてください' : '直してほしい点を書いてください'}（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
             <textarea ref={inputRef} value={input} rows={3}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
@@ -128,7 +128,7 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
 }
 
 /** タイプライター表示。key が変わると最初から打ち直す。finish() で全文表示 */
-function useTypewriter(text: string, key: string): [string, () => void] {
+export function useTypewriter(text: string, key: string): [string, () => void] {
   const [n, setN] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {

@@ -33,6 +33,10 @@ export interface Npc {
   canChat?: boolean;
   /** 作業中に座る場所（机の前）。未指定なら定位置のまま */
   desk?: { x: number; y: number; facing: 'up' | 'down' | 'left' | 'right' };
+  /** 手すきのときの向き（会議の参加者はテーブルを向く）。未指定なら正面 */
+  idleFacing?: 'up' | 'down' | 'left' | 'right';
+  /** 会議の参加者（話しかけても仕事は頼めない） */
+  participant?: boolean;
 }
 
 export interface Floor {
@@ -200,9 +204,24 @@ export const FLOORS: Floor[] = [
     ],
     npcs: [
       {
-        id: 'meeting', name: '司会', title: 'AI編集会議', x: 7, y: 6, room: 'AI編集会議',
+        id: 'meeting', name: '司会', title: 'AI編集会議', x: 7, y: 7, room: 'AI編集会議',
         look: { hair: '#3a5a8a', cloth: '#2f2f3f', hairStyle: 'short', accent: '#d64545' },
-        route: '/projects/{p}/discussions', hint: '編集者・プロット担当・読者代表が議論します', jobKinds: ['discussion'], canChat: true,
+        route: '/projects/{p}/discussions', hint: '議題を出すと、編集者・プロット担当・読者代表がこの場で議論します', canChat: true,
+      },
+      {
+        id: 'editor', name: '編集者', title: '会議の参加者', x: 5, y: 3, room: 'AI編集会議', participant: true, idleFacing: 'right',
+        look: { hair: '#4a3a2a', cloth: '#6a4a3a', hairStyle: 'slick', glasses: true },
+        route: '/projects/{p}/discussions', hint: '商業的な魅力・引きの強さを見ます', jobKinds: ['discussion'],
+      },
+      {
+        id: 'plotter', name: 'プロット担当', title: '会議の参加者', x: 10, y: 3, room: 'AI編集会議', participant: true, idleFacing: 'left',
+        look: { hair: '#2a2a3a', cloth: '#3a5a4a', hairStyle: 'long' },
+        route: '/projects/{p}/discussions', hint: '伏線と構成の整合性を見ます', jobKinds: ['discussion'],
+      },
+      {
+        id: 'reader', name: '読者代表', title: '会議の参加者', x: 8, y: 5, room: 'AI編集会議', participant: true, idleFacing: 'up',
+        look: { hair: '#c86a3a', cloth: '#d6a24f', hairStyle: 'ponytail' },
+        route: '/projects/{p}/discussions', hint: '読者として面白いかを見ます', jobKinds: ['discussion'],
       },
     ],
   },

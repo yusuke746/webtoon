@@ -11,6 +11,7 @@ import {
   type Choice, type Delivery, type Requested,
 } from './workflow';
 import { DesignAltView, DesignView, EpisodesView, LocationsView, PagesView, PhotosView, ScenesView } from './Deliverables';
+import { MeetingScene, type MeetingBubble } from './MeetingScene';
 
 /**
  * RPG 風オフィス = 制作工程そのもの。
@@ -94,6 +95,9 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const requestedRef = useRef(requested);
   requestedRef.current = requested;
+  /** いま場面として見ている会議の id（その会議の報告は出さない） */
+  const meetingRef = useRef<number | null>(null);
+  const [meeting, setMeeting] = useState<{ id: number; startAt: 'begin' | 'end' } | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,7 +124,9 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
           const npcName = FLOORS.flatMap((f) => f.npcs).find((n) => n.id === r.npcId)?.name ?? r.npcId;
           setRequested((rs) => rs.filter((x) => x.jobId !== r.jobId));
           setDeliveries((ds) => [...ds.filter((d) => d.npcId !== r.npcId), { ...r, ok, error: job?.error ?? undefined }]);
-          say(ok ? `${npcName}: 「${r.label}」ができました。話しかけてください。` : `${npcName}: 「${r.label}」に失敗しました。`, 5000);
+          // 会議の場面で見ている最中なら知らせない（場面がそのまま結論まで進み、閉じるときに報告も消化する）
+          const watching = r.kind === 'discussion' && r.discussionId != null && meetingRef.current === r.discussionId;
+          if (!watching) say(ok ? `${npcName}: 「${r.label}」ができました。話しかけてください。` : `${npcName}: 「${r.label}」に失敗しました。`, 5000);
           loadStatus();
         }
       } catch { /* オフライン時は次回 */ }
@@ -141,7 +147,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     for (const f of FLOORS) for (const n of f.npcs) if (n.jobKinds?.some((k) => kinds.has(k))) ids.add(n.id);
     return ids;
   }, [jobs]);
-  const reportNpcIds = useMemo(() => new Set(deliveries.map((d) => d.npcId)), [deliveries]);
+  const reportNpcIds = useMemo(() => new Set(deliveries.filter((d) => !(meeting && d.discussionId === meeting.id)).map((d) => d.npcId)), [deliveries, meeting]);
   const disabledNpcIds = useMemo(() => {
     const ids = new Set<string>();
     if (!projectId) for (const f of FLOORS) for (const n of f.npcs) if (!n.global) ids.add(n.id);
@@ -152,6 +158,27 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
 
   // ---- 会話 ----
   const [talk, setTalk] = useState<TalkState | null>(null);
+  // ---- 4F の会議（部屋の中の場面） ----
+  const [bubbles, setBubbles] = useState<Record<string, { text: string; kind: 'say' | 'think' }>>({});
+  const onBubbles = useCallback((b: MeetingBubble[]) => setBubbles(Object.fromEntries(b.map((x) => [x.npcId, { text: x.text, kind: x.kind }]))), []);
+  /** 会議室へ移動して席につき、会議の場面を開く */
+  const openMeeting = useCallback((id: number, startAt: 'begin' | 'end') => {
+    setTalk(null);
+    setFloorId('4F');
+    setPlayer({ x: 7, y: 2, facing: 'down' }); // テーブルの上座に着く
+    meetingRef.current = id;
+    setMeeting({ id, startAt });
+    // その会議の報告「!」は、場面で直接見るので消化する
+    setDeliveries((ds) => ds.filter((d) => d.discussionId !== id));
+  }, []);
+  const closeMeeting = useCallback(() => {
+    const id = meetingRef.current;
+    meetingRef.current = null;
+    setMeeting(null);
+    setBubbles({});
+    if (id != null) setDeliveries((ds) => ds.filter((d) => d.discussionId !== id));
+    loadStatus();
+  }, [loadStatus]);
   const rules = status?.project?.panelRules;
 
   const routeFor = useCallback((npc: Npc): string => {
@@ -360,6 +387,12 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
+    if (key === 'meeting:start') { openInput('topic'); return; }
+    if (key.startsWith('meeting:open:') || key.startsWith('meeting:replay:')) {
+      const [, how, idS] = key.split(':');
+      openMeeting(Number(idS), how === 'replay' ? 'begin' : 'end');
+      return;
+    }
     if (key === 'photos:upload' && projectId) {
       const bgs = status?.backgrounds ?? [];
       const choicesFor = (bgId: number | null, n: number, adopted: boolean): Choice[] => [
@@ -441,7 +474,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       setTalk({ ...talk, phase: 'menu', content: undefined, reply: `第${ep.number}話「${ep.title}」を担当します。`, choices: plan.choices });
       return;
     }
-  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus]);
+  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus, openMeeting]);
 
   const send = useCallback(async (text: string) => {
     if (!talk || !projectId) return;
@@ -460,6 +493,17 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
         .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（返事がもらえませんでした: ${e.message}）` }));
       return;
     }
+    if (purpose === 'topic') {
+      try {
+        const { discussion, job } = await api.startDiscussion(projectId, text);
+        track(job, { npcId: 'meeting', kind: 'discussion', discussionId: discussion.id, label: job.label });
+        loadStatus();
+        openMeeting(discussion.id, 'begin');
+      } catch (e) {
+        sayAndClose([`会議を開けませんでした: ${(e as Error).message}`], '閉じる');
+      }
+      return;
+    }
     if (!focus) return;
     try {
       if (purpose === 'scenes') {
@@ -474,7 +518,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     } catch (e) {
       sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる');
     }
-  }, [talk, projectId, focus, track, sayAndClose]);
+  }, [talk, projectId, focus, track, sayAndClose, loadStatus, openMeeting]);
 
   const cancelInput = useCallback(() => setTalk((t) => t && { ...t, phase: t.content ? 'deliver' : 'menu' }), []);
 
@@ -494,6 +538,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const goFloor = (id: string) => {
     if (!projectId && id !== '1F') { say('担当作品を決めると他の階へ行けます。'); return; }
     setTalk(null);
+    setMeeting(null);
     setFloorId(id);
     setPlayer({ ...FLOOR_BY_ID[id].spawn, facing: 'down' });
     if (dialogOpen) navigate(basePath);
@@ -549,11 +594,12 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
               onMove={setPlayer}
               onTalk={startTalk}
               onStairs={stairs}
-              active={!dialogOpen && !talk}
-              activeNpcId={current?.npc.id ?? talk?.npc.id ?? null}
+              active={!dialogOpen && !talk && !meeting}
+              activeNpcId={current?.npc.id ?? talk?.npc.id ?? (meeting ? 'meeting' : null)}
               busyNpcIds={busyNpcIds}
               disabledNpcIds={disabledNpcIds}
               reportNpcIds={reportNpcIds}
+              bubbles={meeting ? bubbles : undefined}
             />
           </div>
         </div>
@@ -612,8 +658,20 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
           )}
         </aside>
         {toast && <div className="office-toast">{toast}</div>}
-        {talk && !dialogOpen && (
+        {talk && !dialogOpen && !meeting && (
           <TalkWindow talk={talk} onAdvance={advance} onChoose={choose} onSend={send} onCancelInput={cancelInput} />
+        )}
+        {meeting && !dialogOpen && projectId && (
+          <MeetingScene
+            key={meeting.id}
+            discussionId={meeting.id}
+            startAt={meeting.startAt}
+            jobs={jobs}
+            onBubbles={onBubbles}
+            onJob={(job) => { track(job, { npcId: 'meeting', kind: 'discussion', discussionId: meeting.id, label: job.label }); }}
+            onDecided={loadStatus}
+            onClose={closeMeeting}
+          />
         )}
       </div>
 

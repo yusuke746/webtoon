@@ -13,9 +13,11 @@ export interface Choice { key: string; label: string }
 export interface Requested {
   jobId: number;
   npcId: string;
-  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations';
+  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations' | 'discussion';
   /** design のとき: キャラか背景か */
   designKind?: DesignKind;
+  /** discussion のとき: 会議の id */
+  discussionId?: number;
   episodeId?: number;
   label: string;
   /** 依頼時点の話数（構成依頼で新しい話を見分けるため） */
@@ -190,6 +192,15 @@ export function planTalk(
           deliver: delivery,
         };
       }
+      case 'discussion':
+        return {
+          lines: ['会議がまとまりました。', '結論を聞きますか。それとも最初から見ますか。'],
+          choices: [
+            { key: `meeting:open:${delivery.discussionId}`, label: '結論を聞く' },
+            { key: `meeting:replay:${delivery.discussionId}`, label: '議論を最初から見る' },
+            close,
+          ],
+        };
       case 'locations':
         return {
           lines: ['構成とネームから場所を拾い出しました。', '設定画を作る場所を決めてください。'],
@@ -270,12 +281,22 @@ export function planTalk(
       const choices: Choice[] = eps.length ? [{ key: 'propose:review', label: '伏線の回収案を聞く' }] : [];
       return { lines: baseLines, choices: [...choices, chat, enter('伏線ボードを見る'), close] };
     }
-    case 'meeting':
-      return { lines: baseLines, choices: [chat, enter('会議室に入る'), close] };
+    case 'meeting': {
+      const ds = status?.discussions ?? [];
+      const choices: Choice[] = [{ key: 'meeting:start', label: '議題を出して会議を開く' }];
+      for (const d of ds.filter((x) => x.status === 'running').slice(0, 1)) choices.push({ key: `meeting:open:${d.id}`, label: `進行中の会議「${clipLabel(d.topic)}」を見る` });
+      for (const d of ds.filter((x) => x.status === 'awaiting_user').slice(0, 3)) choices.push({ key: `meeting:open:${d.id}`, label: `「${clipLabel(d.topic)}」の結論を聞く（判断待ち）` });
+      const last = ds.find((x) => x.status === 'adopted' || x.status === 'rejected');
+      if (last) choices.push({ key: `meeting:replay:${last.id}`, label: `前回の会議「${clipLabel(last.topic)}」を見返す` });
+      return { lines: baseLines, choices: [...choices, chat, enter('議事録を見る'), close] };
+    }
     default:
+      if (npc.participant) return { lines: baseLines, choices: [close] };
       return { lines: baseLines, choices: [...(npc.canChat ? [chat] : []), enter(`${npc.room}を見る`), close] };
   }
 }
+
+function clipLabel(t: string, n = 18) { return t.length > n ? `${t.slice(0, n)}…` : t; }
 
 /** 話を選ぶ選択肢（新しい順に最大6件） */
 export function pickChoices(eps: Episode[]): Choice[] {
@@ -296,6 +317,7 @@ export function inputHintFor(purpose: string, npc: Npc): string {
     case 'scenes': return '例: 2シーン目にクロの出番を足して / ラストの引きをもっと不穏に';
     case 'panels': return '例: 見せ場のコマをもっと大きく / 1ページ目はテンポよく小ゴマで / セリフを短く';
     case 'structure': return '例: 次の話はライバルの初登場回にして / 祖母の手がかりを1つ出す';
+    case 'topic': return '例: 第2話の引きは十分か? / ライバルは何話で登場させるべきか?';
     default:
       switch (npc.id) {
         case 'chief': return '例: 2話にライバルの初登場シーンを入れたい / ペンダントの回収を3話に延ばして';

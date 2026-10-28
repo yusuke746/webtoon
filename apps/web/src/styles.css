@@ -876,3 +876,15 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .photo-strip img, .photo-strip .img-fallback { width: 120px; height: 68px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .gallery-item .flag.photo { background: var(--panel); color: var(--sub); border: 1px solid var(--line); }
+
+/* 会議の吹き出し・会議ウィンドウ */
+.office-map .actor .bubble.say {
+  white-space: normal; width: max-content; max-width: 150px; text-align: left; line-height: 1.35; animation: none; z-index: 6;
+  background: #fff; border-color: #2a3a8c; box-shadow: 0 2px 0 #2a3a8c;
+}
+.office-map .actor .bubble.think { background: #eef0ff; border-style: dashed; color: #4a4a6a; }
+.talk.meeting .talk-name.role-editor { background: linear-gradient(#8c3a2a, #5a1414); }
+.talk.meeting .talk-name.role-plotter { background: linear-gradient(#2a6a4a, #144a2e); }
+.talk.meeting .talk-name.role-reader { background: linear-gradient(#b8762a, #7a4a10); }
+.talk.meeting .talk-name.role-user { background: linear-gradient(#3a3a4a, #1f1f2a); }
+.talk-hint { margin-top: 6px; font-size: 11px; color: #c8d0ff; }

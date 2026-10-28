@@ -120,12 +120,20 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
     }
 
     case 'meeting': {
-      const pending = (s?.discussions ?? []).filter((d) => d.status === 'awaiting_user').length;
-      const lines = ['会議室へようこそ。編集者・プロット担当・読者代表が議論します。'];
+      const ds = s?.discussions ?? [];
+      const pending = ds.filter((d) => d.status === 'awaiting_user').length;
+      const running = ds.find((d) => d.status === 'running');
+      const lines = ['会議室へようこそ。議題を出せば、編集者・プロット担当・読者代表がこの場で議論します。'];
+      if (running) lines.push(`いま「${running.topic}」を議論中です。席について聞けます。`);
       if (pending) lines.push(`あなたの判断待ちの議題が ${pending} 件あります。`);
-      lines.push('議題があれば「相談する」で投げてください。');
       return lines;
     }
+    case 'editor':
+      return ['編集者だ。議題は司会に出してくれ。', '俺は売れるか、引きが強いかで判断する。'];
+    case 'plotter':
+      return ['プロット担当です。', '伏線の整合性と構成の流れを見ています。議題は司会へ。'];
+    case 'reader':
+      return ['読者代表です！', '面白いかどうか、読者の目で正直に言います。議題は司会さんに。'];
 
     case 'manager': {
       const a = s?.archive;
