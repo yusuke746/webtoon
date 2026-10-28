@@ -284,6 +284,17 @@ LLM_CLIENT=mock IMAGE_CLIENT=mock npm run dev
 > `[image] using client: replicate` で本番作画が有効か確認できます。
 > また、画風を変更しても作画済みコマは自動では変わらないため「再作画」を実行してください。
 
+### Claude CLI が `エラー終了しました (code=1)` になるとき
+
+起動時に `[llm] Claude CLI 2.x / ログイン済み (...)` と出るか確認する。出ない場合は次の順で見る。
+
+1. `claude auth status` でログインしているか（`loggedIn: false` なら `claude auth login`）
+2. `claude -p "hi"` が手で通るか（通らなければ CLI 側の問題。表示されたメッセージがそのまま原因）
+3. CLI の場所が違うなら `.env` の `CLAUDE_CLI_PATH` に実体のパスを入れる
+   （Windows の npm 版は `claude.cmd` の隣の `cli.js` を自動で見つけて node で起動する。ネイティブ版は `claude.exe` のパスでよい）
+
+失敗時のサーバーログには CLI の出力（stdout の `result` も含む）と渡した引数が出るので、そこに原因が書かれている。
+
 ## 使い方（生成フロー）
 
 1. **作品作成**: タイトルとあらすじを入力
