@@ -468,3 +468,32 @@ ${foreshadowings.length ? foreshadowings.map((f) => `- ${f.title}（${f.status} 
 ## 未回収の伏線と含み
 ## 文体・演出の約束事`;
 }
+
+// ---------- オフィスの NPC との相談 ----------
+
+export function talkPrompt(
+  project: Project,
+  persona: { name: string; canApply: boolean },
+  episodes: Episode[],
+  characters: Character[],
+  foreshadowings: Foreshadowing[],
+  seriesContext: string,
+  history: { role: 'user' | 'npc'; text: string }[],
+  message: string,
+): string {
+  return `あなたは漫画編集部の「${persona.name}」として、作者（ユーザー）と会話しています。作品の状況を踏まえて、役割にふさわしい口調で «3〜6文» で答えてください。
+
+## 作品の状況
+${projectContextSummary(project, episodes, characters, foreshadowings)}
+${seriesContext ? `\n## 連載アーカイブ（連載マネージャーより）\n${seriesContext}\n` : ''}
+${history.length ? `## これまでの会話\n${history.map((h) => `${h.role === 'user' ? '作者' : persona.name}: ${h.text}`).join('\n')}\n` : ''}
+## 今回の発言
+${message}
+
+## 出力形式（JSON）
+{
+  "reply": "返答（日本語。改行可）",
+  "action": ${persona.canApply ? '"apply_change" または null  … 発言が «構成・伏線・話の内容を変える具体的な要望» で、そのまま反映して良いなら "apply_change"。質問や雑談なら null' : 'null'}
+}
+${JSON_ONLY}`;
+}

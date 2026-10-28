@@ -14,7 +14,8 @@ export type LLMTask =
   | 'apply_change'   // 要約ベースの変更指示の適用
   | 'ref_image'      // 参照画像用の英語プロンプト生成
   | 'summarize'      // 汎用要約（話の要約など）
-  | 'archive';       // 連載メモ（シリーズバイブル）の更新
+  | 'archive'        // 連載メモ（シリーズバイブル）の更新
+  | 'talk';          // オフィスの NPC との相談
 
 export interface LLMRequest {
   task: LLMTask;

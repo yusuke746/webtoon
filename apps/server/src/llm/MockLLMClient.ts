@@ -188,6 +188,22 @@ export class MockLLMClient implements LLMClient {
           '- 各話の最終コマは必ず引きで終える',
         ].join('\n');
 
+      case 'talk': {
+        const who = req.system ?? '';
+        const m = req.prompt.match(/## 今回の発言\n([\s\S]*?)\n/);
+        const said = m?.[1]?.trim() ?? '';
+        if (who.includes('編集長')) {
+          return JSON.stringify({
+            reply: `「${said}」か。悪くない。第2話の冒頭に入れれば引きが強くなる。構成に反映するなら言ってくれ。（モック）`,
+            action: 'apply_change',
+          });
+        }
+        if (who.includes('マネージャー')) {
+          return JSON.stringify({ reply: '第1話時点では、少女のペンダントは「光る」ことだけが確定しています。由来は未確定です。（モック）', action: null });
+        }
+        return JSON.stringify({ reply: `なるほど、「${said}」ですね。具体案を2つ考えました。1) … 2) …（モック応答）`, action: null });
+      }
+
       default:
         return 'これまでの決定事項: 構成・キャラ設定は生成済み。伏線は1件登録済み。（モック要約）';
     }

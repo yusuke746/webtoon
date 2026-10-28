@@ -51,9 +51,15 @@ data/series/<id>-<作品名>/
 | B1 | 書庫 | 連載マネージャー → 書庫（連載アーカイブ） / 伏線ボード → 伏線 / アセット倉庫 → ライブラリ |
 
 - 矢印キー/WASD で移動、Enter/Space で会話、クリックで歩いて話しかける。階段に乗ると上下階へ
+- NPC に話しかけると会話ウィンドウが開く。まず作品の状態に応じた定型文（進み具合・未回収の伏線など）、
+  次にメニュー（部屋に入る / 相談する・要望を伝える / また今度）
+- 「相談する」はテキスト入力。NPC の役割（編集長・脚本家・漫画家・書庫番…）で Claude が答え、
+  構成を変える要望なら「その内容を構成に反映する」が出る（既存の `apply-change` を呼ぶ）。API: `POST /api/projects/:id/talk`
 - 作業中のジョブは NPC の頭上に「作業中…」と出る
+- ドット絵は 16×24 の人物（3方向×歩行2フレーム、髪型・服色・眼鏡をレイヤー合成）と陰影付き 16×16 タイル。
+  `apps/web/src/office/art/` に文字列で定義しており、差し替えや追加はそこを編集する
 - ヘッダの「クラシック表示」で従来のサイドバー UI に切り替えられる（`localStorage` の `ui:classic`）
-- 実装は `apps/web/src/office/`（`sprites.ts` ドット絵 / `floors.ts` フロア定義 / `OfficeMap.tsx` / `OfficeLayout.tsx`）
+- 実装は `apps/web/src/office/`（`art/` ドット絵 / `sprites.ts` 描画 / `floors.ts` フロア定義 / `OfficeMap.tsx` / `TalkWindow.tsx` 会話 / `dialogue.ts` 定型文 / `OfficeLayout.tsx`）
 
 ## 制作フロー
 
@@ -119,7 +125,8 @@ apps/
     src/image/    ImageClient 抽象化層 + Replicate REST（predictions/files/trainings）+ 無依存ZIP writer
     src/engines/  story（構成/キャラ/ネーム/作画）, foreshadow, discussion, changes,
                   jobs（非同期ジョブ基盤）, visual（参照画像・背景・LoRA学習）,
-                  archive（書庫: Markdown フォルダの書き出し・要約・連載メモ・生成用文脈）
+                  archive（書庫: Markdown フォルダの書き出し・要約・連載メモ・生成用文脈）,
+                  talk（オフィスの NPC との相談。役割別ペルソナ）
   web/      React + Vite フロントエンド
     src/office/      RPG 風オフィス（マップ・NPC・部屋ダイアログ）
     src/components/  WorkflowStepper, JobProgress, RefImageStudio, LoraStudio, PageViewer, PageState

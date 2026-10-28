@@ -156,4 +156,8 @@ export const api = {
     put<{ ok: boolean }>(`/projects/${projectId}/archive/file`, { path, content }),
   registerEpisodeToArchive: (episodeId: number) => post<Job>(`/episodes/${episodeId}/archive/register`),
   updateArchiveNotes: (projectId: number) => post<{ notes: string }>(`/projects/${projectId}/archive/notes`),
+
+  // オフィスの NPC との相談
+  talk: (projectId: number, npcId: string, message: string, history: { role: 'user' | 'npc'; text: string }[]) =>
+    post<{ reply: string; action: 'apply_change' | null }>(`/projects/${projectId}/talk`, { npcId, message, history }),
 };

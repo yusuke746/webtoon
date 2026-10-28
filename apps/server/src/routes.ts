@@ -11,6 +11,7 @@ import {
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
+import { talkToNpc } from './engines/talk.js';
 import {
   getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
   updateBibleNotes, writeArchiveFile,
@@ -601,4 +602,12 @@ router.post('/episodes/:id/archive/register', wrap((req, res) => {
 /** 連載メモだけを全話の要約から書き直す */
 router.post('/projects/:id/archive/notes', wrap(async (req, res) => {
   res.json({ notes: await updateBibleNotes(id(req)) });
+}));
+
+// ============ オフィスの NPC との相談 ============
+
+router.post('/projects/:id/talk', wrap(async (req, res) => {
+  const { npcId, message, history } = req.body ?? {};
+  if (!npcId || !message) { res.status(400).json({ error: 'npcId と message が必要です' }); return; }
+  res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : []));
 }));

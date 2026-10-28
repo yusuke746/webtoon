@@ -753,3 +753,43 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .sidebar-switch:hover { color: #fff; border-color: var(--accent); }
 
 .office-map-wrap { flex-shrink: 0; }
+
+/* ---- 人物スプライト（16×24 → 48×72）と影 ---- */
+.office-map .actor { width: 48px; height: 72px; transition: left .11s linear, top .11s linear; }
+.office-map .actor .sprite { width: 48px; height: 72px; background-size: 100% 100%; image-rendering: pixelated; position: relative; z-index: 1; }
+.office-map .actor.left .sprite { transform: scaleX(-1); }
+.office-map .actor .shadow {
+  position: absolute; left: 9px; bottom: 2px; width: 30px; height: 9px; border-radius: 50%;
+  background: rgba(40, 25, 45, .35); z-index: 0;
+}
+.office-map .actor .name { top: calc(100% - 2px); }
+
+/* ---- 会話ウィンドウ（スーファミ風） ---- */
+.talk {
+  position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); width: min(760px, 92%); z-index: 20;
+  font-size: 15px; line-height: 1.7; color: #fff; cursor: pointer;
+}
+.talk-name {
+  display: inline-block; margin-left: 14px; padding: 2px 12px; background: linear-gradient(#2a3a8c, #141f5a);
+  border: 3px solid #fff; border-bottom: 0; border-radius: 8px 8px 0 0; font-weight: 800; letter-spacing: .04em;
+  box-shadow: 0 0 0 2px #1f1a24;
+}
+.talk-name span { margin-left: 8px; font-size: 12px; font-weight: 500; color: #c8d0ff; }
+.talk-box {
+  background: linear-gradient(#2a3a8c, #10184a); border: 3px solid #fff; border-radius: 10px; padding: 14px 18px 12px;
+  box-shadow: 0 0 0 2px #1f1a24, 0 10px 30px rgba(0,0,0,.5); min-height: 96px; text-shadow: 1px 1px 0 #0a0f2e;
+}
+.talk-text { white-space: pre-wrap; min-height: 54px; }
+.talk-text.small { font-size: 13px; color: #d8dcff; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,.35); padding-bottom: 6px; }
+.talk-next { display: inline-block; margin-left: 6px; animation: bob 1s infinite; color: #ffd866; }
+.talk-dots::after { content: ''; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.talk-menu { display: flex; flex-direction: column; gap: 2px; }
+.talk-menu button {
+  background: transparent; border: 0; color: #fff; text-align: left; font-family: inherit; font-size: 15px; padding: 3px 6px;
+  border-radius: 6px; cursor: pointer; text-shadow: 1px 1px 0 #0a0f2e;
+}
+.talk-menu button.active { background: rgba(255,255,255,.12); }
+.talk-menu button .cur { display: inline-block; width: 20px; color: #ffd866; }
+.talk-input textarea { width: 100%; margin: 6px 0 8px; font-size: 14px; color: var(--ink); background: #fff; }
+.talk-input .muted { color: #c8d0ff; font-size: 12px; }
