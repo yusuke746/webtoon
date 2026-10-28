@@ -1,5 +1,5 @@
 import type {
-  ArchiveInfo,
+  ArchiveInfo, DesignProposal,
   ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
   Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
   Panel, Project, RefImage, RefImageKind, Worldview,
@@ -168,4 +168,10 @@ export const api = {
     post<Job>(`/episodes/${episodeId}/jobs/revise-scenes`, { instruction }),
   startPanelsJob: (episodeId: number, instruction?: string) =>
     post<Job>(`/episodes/${episodeId}/jobs/panels`, { instruction }),
+
+  // 設定画づくり
+  startDesignJob: (projectId: number, characterIds?: number[]) => post<Job>(`/projects/${projectId}/jobs/design`, { characterIds }),
+  getDesign: (projectId: number) => get<DesignProposal[]>(`/projects/${projectId}/design`),
+  adoptDesign: (characterId: number, refImageId: number) =>
+    post<{ ref: RefImage; job: Job | null }>(`/characters/${characterId}/design/adopt`, { refImageId }),
 };

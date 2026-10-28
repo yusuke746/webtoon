@@ -1,4 +1,4 @@
-import type { ArchiveInfo, Character, Discussion, Episode, ForeshadowWarning, Project } from '@manga/shared';
+import type { ArchiveInfo, Character, DesignProposal, Discussion, Episode, ForeshadowWarning, Project } from '@manga/shared';
 import type { Npc } from './floors';
 
 /**
@@ -15,6 +15,8 @@ export interface OfficeStatus {
   discussions: Discussion[];
   archive: ArchiveInfo | null;
   artStyleName: string | null;
+  /** 設定画の提案（キャラごとの候補とおすすめ） */
+  design: DesignProposal[] | null;
 }
 
 const EP_STATUS: Record<string, string> = {
@@ -71,10 +73,11 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       const cs = s?.characters ?? [];
       if (!cs.length) return ['資料室です。まだキャラクターの設定がありません。', '構成があれば、そこから自動で配役を起こせます。'];
       const noRef = cs.filter((c) => !c.refImageUrl && !c.loraUrl);
+      const pending = (s?.design ?? []).filter((d) => !d.adopted && d.top).length;
       const lines = [`登場人物は ${cs.length} 人。`];
-      lines.push(noRef.length
-        ? `参照画像がないのは ${noRef.slice(0, 3).map((c) => c.name).join('・')}${noRef.length > 3 ? ' ほか' : ''}。ビジュアル工房で作れます。`
-        : '全員に参照画像があります。作画のたびに私がチェックします。');
+      if (pending) lines.push(`設定画の候補が ${pending} 人分できています。私のおすすめを選んであります。`);
+      else if (noRef.length) lines.push(`設定画がないのは ${noRef.slice(0, 3).map((c) => c.name).join('・')}${noRef.length > 3 ? ' ほか' : ''}。頼んでもらえれば候補を描いて選びます。`);
+      else lines.push('全員の設定画が揃っています。作画のたびに私がチェックします。');
       return lines;
     }
 

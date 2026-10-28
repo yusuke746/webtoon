@@ -7,10 +7,10 @@ import { OfficeMap, type PlayerState } from './OfficeMap';
 import { npcLines, type OfficeStatus } from './dialogue';
 import { TalkWindow, type TalkState } from './TalkWindow';
 import {
-  inputHintFor, nextHint, pickChoices, planTalk, questRows,
+  designChoices, inputHintFor, mainCharacters, nextHint, pendingProposals, pickChoices, planTalk, questRows,
   type Choice, type Delivery, type Requested,
 } from './workflow';
-import { EpisodesView, PagesView, ScenesView } from './Deliverables';
+import { DesignAltView, DesignView, EpisodesView, PagesView, ScenesView } from './Deliverables';
 
 /**
  * RPG 風オフィス = 制作工程そのもの。
@@ -34,13 +34,14 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const loadStatus = useCallback(async () => {
     if (!projectId) { setStatus(null); return; }
     try {
-      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles] = await Promise.all([
+      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles, design] = await Promise.all([
         api.getProject(projectId), api.listEpisodes(projectId), api.listCharacters(projectId),
         api.listBackgrounds(projectId), api.foreshadowWarnings(projectId), api.listDiscussions(projectId),
         api.getArchive(projectId).catch(() => null), api.listArtStyles(projectId).catch(() => []),
+        api.getDesign(projectId).catch(() => null),
       ]);
       const style = styles.find((s) => s.id === project.artStyleId) ?? null;
-      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null });
+      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design });
     } catch {
       setStatus(null);
     }
@@ -168,6 +169,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       const added = countBefore !== undefined ? eps.slice(countBefore) : eps.slice(-2);
       return { content: <EpisodesView episodes={added.length ? added : eps} title="新しい話の構成" />, fails: 0 };
     }
+    if (kind === 'design') {
+      const proposals = await api.getDesign(projectId!);
+      return { content: <DesignView proposals={proposals} />, fails: 0 };
+    }
     if (!ep) return { content: null, fails: 0 };
     if (kind === 'scenes') return { content: <ScenesView episode={ep} />, fails: 0 };
     if ((kind === 'panels' || kind === 'images') && rules) {
@@ -175,7 +180,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       return { content: <PagesView episode={full} rules={rules} />, fails: full.panels.filter((p) => p.checkStatus === 'fail').length };
     }
     return { content: null, fails: 0 };
-  }, [status, rules]);
+  }, [status, rules, projectId]);
 
   /** 指摘のあるコマがあれば「描き直してもらう」を選択肢の先頭に足す */
   const withRedraw = (choices: Choice[], fails: number): Choice[] =>
@@ -309,6 +314,57 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
         const job = await api.registerEpisodeToArchive(focus.id);
         track(job, { npcId: 'manager', kind: 'archive', episodeId: focus.id, label: job.label });
         sayAndClose([`第${focus.number}話ですね。要約して連載メモを更新します。`, '少し時間をください。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'design:start' && projectId) {
+      try {
+        const job = await api.startDesignJob(projectId);
+        track(job, { npcId: 'chara', kind: 'design', label: job.label });
+        sayAndClose(['承知しました。候補を数枚ずつ描いて、設定に一番近いものを選んでおきます。', 'できたら呼びに行きます。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'design:show' && projectId) {
+      const proposals = await api.getDesign(projectId);
+      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignView proposals={proposals} />, choices: designChoices({ ...(status as NonNullable<typeof status>), design: proposals }), reply: null });
+      return;
+    }
+    if (key === 'design:adopt:all' && projectId) {
+      setTalk((t) => t && { ...t, phase: 'waiting' });
+      try {
+        const pending = pendingProposals(status);
+        for (const d of pending) await api.adoptDesign(d.character.id, d.top!.id);
+        await loadStatus();
+        sayAndClose([
+          pending.length > 1 ? `${pending.map((d) => d.character.name).join('・')}の設定画を決めました。` : `${pending[0]?.character.name ?? ''}の設定画を決めました。`,
+          '正面・横顔・全身・表情の4枚セットを描き足しておきます。作画のときはこれを基準に見ます。',
+        ], 'よろしく');
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key.startsWith('design:alt:') && projectId) {
+      const cid = Number(key.split(':')[2]);
+      const proposals = await api.getDesign(projectId);
+      const d = proposals.find((x) => x.character.id === cid);
+      if (!d) return;
+      const choices: Choice[] = d.candidates.map((c, i) => ({ key: `design:pick:${cid}:${c.id}`, label: `候補${i + 1}${c.rank === 1 ? '（おすすめ）' : ''}を採用する` }));
+      setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignAltView proposal={d} />, choices: [...choices, { key: 'design:show', label: '戻る' }], reply: null });
+      return;
+    }
+    if (key.startsWith('design:pick:') && projectId) {
+      const [, , cidS, ridS] = key.split(':');
+      setTalk((t) => t && { ...t, phase: 'waiting' });
+      try {
+        await api.adoptDesign(Number(cidS), Number(ridS));
+        await loadStatus();
+        const left = (await api.getDesign(projectId)).filter((x) => !x.adopted && x.top);
+        if (left.length) {
+          const proposals = await api.getDesign(projectId);
+          setTalk((t) => t && { ...t, phase: 'deliver', content: <DesignView proposals={proposals} />, choices: designChoices({ ...(status as NonNullable<typeof status>), design: proposals }), reply: null });
+        } else {
+          sayAndClose(['採用しました。4枚セットを描き足しておきます。'], 'よろしく');
+        }
       } catch (e) { fail(e as Error); }
       return;
     }
@@ -446,6 +502,18 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
           {projectId && (
             <div className="quest">
               <div className="quest-title"><span>進行表</span><span className="muted">担当中: {focus ? `第${focus.number}話` : '—'}</span></div>
+              {status && status.characters.length > 0 && (() => {
+                const main = mainCharacters(status);
+                const done = main.filter((c) => !!c.refImageUrl).length;
+                const working = busyNpcIds.has('chara');
+                return (
+                  <div className="quest-prep">
+                    <span>準備</span>
+                    <span className={`qstep ${done === main.length ? 'done' : working ? 'active' : ''}`}>キャラ設定画 {done}/{main.length}</span>
+                    {pendingProposals(status).length > 0 && <span className="qstep active">候補あり</span>}
+                  </div>
+                );
+              })()}
               {rows.length ? rows.map((r) => (
                 <div key={r.episode.id} className={`quest-row ${r.episode.id === focusId ? 'focus' : ''}`} onClick={() => setFocus(r.episode.id)}>
                   <span className="ep">第{r.episode.number}話</span>

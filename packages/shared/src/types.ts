@@ -258,7 +258,21 @@ export interface RefImage {
   prompt: string;
   /** 対象の refImageUrl として採用中か */
   selected: boolean;
+  /** 設定担当（Claude）が付けた順位。1 がおすすめ。未評価は null */
+  rank: number | null;
+  /** 順位の理由 */
+  note: string | null;
   createdAt: string;
+}
+
+/** 設定画の提案（キャラごと） */
+export interface DesignProposal {
+  character: Character;
+  candidates: RefImage[];
+  /** おすすめ（rank 1）。候補が無ければ null */
+  top: RefImage | null;
+  /** 採用済み（refImageUrl あり）か */
+  adopted: boolean;
 }
 
 // ---------- 非同期ジョブ ----------

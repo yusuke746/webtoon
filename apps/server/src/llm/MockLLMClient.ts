@@ -193,6 +193,14 @@ export class MockLLMClient implements LLMClient {
         return JSON.stringify({ prompt: `${name}, 16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)` });
       }
 
+      case 'art_pick': {
+        const ids = [...req.prompt.matchAll(/id=(\d+)/g)].map((m) => Number(m[1]));
+        return JSON.stringify({
+          ranking: ids,
+          reason: '2枚目以降は髪飾りの形が設定と違う。1枚目が設定文に最も近く、表情もニュートラル。（モック）',
+        });
+      }
+
       case 'art_check': {
         // 1回目は不一致、2回目以降は合格（描き直しループの動作確認用）
         const attempt = Number(req.prompt.match(/## 試行\n(\d+)/)?.[1] ?? 1);

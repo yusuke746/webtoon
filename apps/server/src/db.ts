@@ -194,6 +194,9 @@ addColumnIfMissing('panels', 'check_status', "TEXT NOT NULL DEFAULT 'none'");
 addColumnIfMissing('panels', 'check_notes', 'TEXT');
 // 絵の指示用の固定文（英語）
 addColumnIfMissing('characters', 'visual_prompt', 'TEXT');
+// 設定画の候補に付ける順位と理由（設定担当 = Claude が見比べて決める）
+addColumnIfMissing('ref_images', 'rank', 'INTEGER');
+addColumnIfMissing('ref_images', 'note', 'TEXT');
 addColumnIfMissing('backgrounds', 'visual_prompt', 'TEXT');
 
 // ---------- 行 → ドメイン型 変換 ----------
@@ -324,6 +327,8 @@ export function rowToRefImage(r: Row): RefImage {
     url: r.url,
     prompt: r.prompt,
     selected: !!r.selected,
+    rank: r.rank ?? null,
+    note: r.note ?? null,
     createdAt: r.created_at,
   };
 }

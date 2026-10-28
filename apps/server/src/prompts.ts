@@ -609,3 +609,27 @@ ${attempt}
 }
 出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
 }
+
+/** 設定画の候補を見比べて順位付けする（設定担当） */
+export function artPickPrompt(
+  character: { name: string; appearance: string; visualPrompt: string | null },
+  candidates: { id: number; file: string }[],
+): string {
+  return `キャラクター「${character.name}」の設定画の候補を見比べ、設定に最も忠実な1枚を選んでください。
+まず Read ツールで各画像ファイルを開いて実際に見てください（開かずに判定しないこと）。
+
+## 設定（これに最も近いものを選ぶ）
+${character.visualPrompt ? `- 固定文: ${character.visualPrompt}\n` : ''}- 外見: ${character.appearance || '（詳細なし）'}
+
+## 候補
+${candidates.map((c, i) => `- 候補${i + 1} id=${c.id}: ${c.file}`).join('\n')}
+
+## 判定基準（優先順）
+1. 髪型・髪色・目・服装・小物が設定と一致している
+2. 顔立ちが判別しやすく、以後の作画の基準にしやすい（正面寄り・表情ニュートラル・他人物なし）
+3. 文字・透かし・破綻がない
+
+## 出力形式（JSON）
+{ "ranking": [最も良い候補のidから順に全候補のid], "reason": "1位を選んだ理由と、他を下げた理由（日本語・簡潔）" }
+出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
+}

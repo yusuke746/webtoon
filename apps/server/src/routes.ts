@@ -13,6 +13,7 @@ import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
 import { talkToNpc } from './engines/talk.js';
+import { adoptDesign, listDesignProposals, startCharacterDesignJob } from './engines/design.js';
 import {
   getArchiveInfo, readArchiveFile, summarizeEpisode, syncArchive,
   updateBibleNotes, writeArchiveFile,
@@ -671,4 +672,21 @@ router.post('/projects/:id/talk', wrap(async (req, res) => {
   const { npcId, message, history } = req.body ?? {};
   if (!npcId || !message) { res.status(400).json({ error: 'npcId と message が必要です' }); return; }
   res.json(await talkToNpc(id(req), String(npcId), String(message), Array.isArray(history) ? history : []));
+}));
+
+// ============ 設定画づくり（キャラクターデザイン） ============
+
+router.post('/projects/:id/jobs/design', wrap((req, res) => {
+  const ids = Array.isArray(req.body?.characterIds) ? req.body.characterIds.map(Number) : undefined;
+  res.status(202).json(startCharacterDesignJob(id(req), ids));
+}));
+
+router.get('/projects/:id/design', wrap((req, res) => {
+  res.json(listDesignProposals(id(req)));
+}));
+
+router.post('/characters/:id/design/adopt', wrap(async (req, res) => {
+  const refImageId = Number(req.body?.refImageId);
+  if (!refImageId) { res.status(400).json({ error: 'refImageId が必要です' }); return; }
+  res.json(await adoptDesign(id(req), refImageId));
 }));

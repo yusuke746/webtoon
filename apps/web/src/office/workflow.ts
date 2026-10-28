@@ -1,4 +1,4 @@
-import type { Episode, Job } from '@manga/shared';
+import type { Character, DesignProposal, Episode, Job } from '@manga/shared';
 import type { Npc } from './floors';
 import type { OfficeStatus } from './dialogue';
 
@@ -13,7 +13,7 @@ export interface Choice { key: string; label: string }
 export interface Requested {
   jobId: number;
   npcId: string;
-  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive';
+  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design';
   episodeId?: number;
   label: string;
   /** 依頼時点の話数（構成依頼で新しい話を見分けるため） */
@@ -29,6 +29,27 @@ export interface Delivery extends Requested {
 export const EP_LABEL: Record<string, string> = {
   draft: '下書き', structured: '構成済み', paneled: 'ネーム済み', rendered: '作画済み',
 };
+
+// ---------- 設定画（キャラクターデザイン）の状態 ----------
+
+/** 話に登場する主要キャラ（シーンの登場名で引く。見つからなければ全員） */
+export function mainCharacters(status: OfficeStatus | null, episode?: Episode | null): Character[] {
+  if (!status) return [];
+  const eps = episode ? [episode] : status.episodes;
+  const names = new Set(eps.flatMap((e) => e.scenes.flatMap((sc) => sc.characters)));
+  const hit = status.characters.filter((c) => names.has(c.name));
+  return hit.length ? hit : episode ? [] : status.characters;
+}
+
+/** 設定画がまだのキャラ */
+export function missingDesign(status: OfficeStatus | null, episode?: Episode | null): Character[] {
+  return mainCharacters(status, episode).filter((c) => !c.refImageUrl);
+}
+
+/** 設定担当が選んだおすすめが未採用のまま残っている提案 */
+export function pendingProposals(status: OfficeStatus | null): DesignProposal[] {
+  return (status?.design ?? []).filter((d) => !d.adopted && d.top);
+}
 
 /** 進行表の1話ぶん */
 export interface QuestRow {
@@ -61,10 +82,17 @@ export function nextHint(status: OfficeStatus | null, focus: Episode | null): st
   if (!status.episodes.length) return '2F 脚本家に最初の構成を頼む';
   if (!focus) return '進行表から担当する話を選ぶ';
   const archived = status.archive?.episodes.find((a) => a.episodeId === focus.id)?.hasSummary;
+  const pending = pendingProposals(status).length;
+  const missing = missingDesign(status, focus).length;
+  if (pending) return `2F 設定担当が設定画の候補を持っている（${pending} 人分）。採用するか決める`;
   switch (focus.status) {
     case 'draft':
-    case 'structured': return `第${focus.number}話: 2F 脚本家の構成を確認して 3F 漫画家にネームを頼む`;
-    case 'paneled': return `第${focus.number}話: 3F 漫画家の原稿を確認して作画に入ってもらう`;
+    case 'structured': return missing
+      ? `第${focus.number}話: 設定画がまだのキャラが ${missing} 人。2F 設定担当に設定画を頼む`
+      : `第${focus.number}話: 2F 脚本家の構成を確認して 3F 漫画家にネームを頼む`;
+    case 'paneled': return missing
+      ? `第${focus.number}話: 作画の前に 2F 設定担当へ設定画を頼む（${missing} 人）`
+      : `第${focus.number}話: 3F 漫画家の原稿を確認して作画に入ってもらう`;
     case 'rendered': return archived ? `第${focus.number}話は完成。次の話へ（2F 脚本家に続きを頼める）` : `第${focus.number}話: B1 書庫番に登録を頼む`;
   }
   return '';
@@ -84,8 +112,9 @@ export function planTalk(
   focus: Episode | null,
   delivery: Delivery | null,
   busy: boolean,
-  baseLines: string[],
+  baseLinesIn: string[],
 ): TalkPlan {
+  let baseLines = baseLinesIn;
   const p = status?.project ?? null;
   const close: Choice = { key: 'close', label: 'また今度' };
   const enter = (label: string): Choice => ({ key: 'enter', label });
@@ -138,6 +167,12 @@ export function planTalk(
           lines: [`第${ep?.number ?? '?'}話を書庫に登録しました。連載メモも更新済みです。`],
           choices: [enter('書庫を見る'), close],
         };
+      case 'design':
+        return {
+          lines: ['設定画の候補ができました。', '設定に一番近い1枚を私が選んであります。見てください。'],
+          choices: designChoices(status),
+          deliver: delivery,
+        };
     }
   }
 
@@ -162,7 +197,13 @@ export function planTalk(
       if (focus.status === 'draft' || focus.status === 'structured') {
         choices.push({ key: 'panels:generate', label: `${f}のネームを切ってもらう` });
       } else if (focus.status === 'paneled') {
-        choices.push({ key: 'panels:show', label: `${f}の原稿を見せて` }, { key: 'images:generate', label: `${f}の作画に入ってもらう` }, { key: 'panels:revise', label: 'ネームを直してほしい' });
+        const miss = missingDesign(status, focus);
+        choices.push(
+          { key: 'panels:show', label: `${f}の原稿を見せて` },
+          { key: 'images:generate', label: miss.length ? `設定画なしで${f}の作画に入る（${miss.map((c) => c.name).join('・')}の顔がブレるかも）` : `${f}の作画に入ってもらう` },
+          { key: 'panels:revise', label: 'ネームを直してほしい' },
+        );
+        if (miss.length) baseLines = [...baseLines, `${miss.map((c) => c.name).join('・')}の設定画がまだない。先に2Fの設定担当に頼んでくると顔が安定するよ。`];
       } else {
         choices.push({ key: 'panels:show', label: `${f}の原稿を見せて（作画済み）` }, { key: 'episode:next', label: '次の話へ' });
       }
@@ -176,6 +217,14 @@ export function planTalk(
         choices.push({ key: 'archive:register', label: done ? `${f}を書庫に登録し直す` : `${f}を書庫に登録してもらう` });
       }
       return { lines: baseLines, choices: [...choices, chat, enter('書庫を見る'), close] };
+    }
+    case 'chara': {
+      const choices: Choice[] = [];
+      const pending = pendingProposals(status);
+      const missing = (status?.characters ?? []).filter((c) => !c.refImageUrl);
+      if (pending.length) choices.push({ key: 'design:show', label: `設定画の候補を見せて（${pending.length} 人分）` });
+      if (missing.length) choices.push({ key: 'design:start', label: `設定画のない ${missing.length} 人の設定画を作ってもらう` });
+      return { lines: baseLines, choices: [...choices, chat, enter('資料室を見る'), close] };
     }
     case 'chief':
       return { lines: baseLines, choices: [chat, enter('ダッシュボードを見る'), close] };
@@ -213,4 +262,16 @@ export function inputHintFor(purpose: string, npc: Npc): string {
         default: return 'ご要望をどうぞ';
       }
   }
+}
+
+/** 設定画の提案に対する選択肢: おすすめを全員採用 / 人ごとに別の候補 */
+export function designChoices(status: OfficeStatus | null): Choice[] {
+  const pending = pendingProposals(status);
+  const choices: Choice[] = [];
+  if (pending.length) choices.push({ key: 'design:adopt:all', label: pending.length > 1 ? `おすすめを ${pending.length} 人とも採用する` : `${pending[0].character.name}はこの顔で採用する` });
+  for (const d of pending.slice(0, 4)) {
+    if (d.candidates.length > 1) choices.push({ key: `design:alt:${d.character.id}`, label: `${d.character.name}は別の候補を見る` });
+  }
+  choices.push({ key: 'enter', label: '資料室で見る' }, { key: 'close', label: 'また今度' });
+  return choices;
 }

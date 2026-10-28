@@ -1,4 +1,5 @@
-import type { Episode, PanelRules } from '@manga/shared';
+import type { DesignProposal, Episode, PanelRules } from '@manga/shared';
+import { FallbackImage } from '../components/PageViewer';
 import type { EpisodeWithPanels } from '../api';
 import { PageViewer } from '../components/PageViewer';
 
@@ -65,6 +66,54 @@ export function EpisodesView({ episodes, title }: { episodes: Episode[]; title: 
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+/** 設定画の提案（キャラごとのおすすめ1枚 + 理由 + 他の候補） */
+export function DesignView({ proposals }: { proposals: DesignProposal[] }) {
+  const pending = proposals.filter((d) => !d.adopted && d.top);
+  const done = proposals.filter((d) => d.adopted);
+  return (
+    <div>
+      <h4>設定画の候補 {pending.length} 人分{done.length ? <span className="muted" style={{ marginLeft: 8, fontWeight: 500 }}>（採用済み {done.length} 人）</span> : null}</h4>
+      <div className="design-grid">
+        {pending.map((d) => (
+          <div key={d.character.id} className="design-card">
+            <div className="design-top">
+              <FallbackImage src={d.top!.url} alt={d.character.name} />
+              <span className="badge ok">おすすめ</span>
+            </div>
+            <div className="design-meta">
+              <strong>{d.character.name}</strong> <span className="muted">{d.character.role}</span>
+              {d.top!.note && <div className="design-note">{d.top!.note}</div>}
+              <div className="design-thumbs">
+                {d.candidates.filter((c) => c.id !== d.top!.id).slice(0, 3).map((c) => (
+                  <FallbackImage key={c.id} src={c.url} alt={`${d.character.name} 候補${c.rank ?? ''}`} />
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 1人分の候補を番号付きで並べる（別の候補を選ぶとき） */
+export function DesignAltView({ proposal }: { proposal: DesignProposal }) {
+  return (
+    <div>
+      <h4>{proposal.character.name} の候補</h4>
+      <div className="design-alt">
+        {proposal.candidates.map((c, i) => (
+          <div key={c.id} className={`design-alt-item ${c.rank === 1 ? 'best' : ''}`}>
+            <FallbackImage src={c.url} alt={`候補${i + 1}`} />
+            <div>候補{i + 1}{c.rank === 1 ? '（おすすめ）' : c.rank ? `（${c.rank}位）` : ''}</div>
+          </div>
+        ))}
+      </div>
+      {proposal.top?.note && <div className="design-note">{proposal.top.note}</div>}
     </div>
   );
 }
