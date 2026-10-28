@@ -31,6 +31,8 @@ export interface Npc {
   jobKinds?: string[];
   /** 相談（LLM）に対応するか */
   canChat?: boolean;
+  /** 作業中に座る場所（机の前）。未指定なら定位置のまま */
+  desk?: { x: number; y: number; facing: 'up' | 'down' | 'left' | 'right' };
 }
 
 export interface Floor {
@@ -65,6 +67,7 @@ export const FLOORS: Floor[] = [
         id: 'manager', name: '連載マネージャー', title: '書庫番', x: 11, y: 3, room: '書庫',
         look: { hair: '#7a5a3a', cloth: '#6c7a4b', hairStyle: 'short', glasses: true },
         route: '/projects/{p}/archive', hint: 'これまでの話と設定を預かっています', jobKinds: ['archive'], canChat: true,
+        desk: { x: 11, y: 4, facing: 'left' },
       },
       {
         id: 'foreshadow', name: '進行担当', title: '伏線ボード係', x: 4, y: 5, room: '伏線ボード',
@@ -105,6 +108,7 @@ export const FLOORS: Floor[] = [
         id: 'chief', name: '編集長', title: '編集長', x: 12, y: 3, room: 'ダッシュボード',
         look: { hair: '#5c5c66', cloth: '#2f2f3f', hairStyle: 'slick', glasses: true },
         route: '/projects/{p}', hint: '進行状況と次にやることを把握しています', jobKinds: ['apply_change'], canChat: true,
+        desk: { x: 13, y: 2, facing: 'left' },
       },
     ],
   },
@@ -130,11 +134,13 @@ export const FLOORS: Floor[] = [
         id: 'writer', name: '脚本家', title: '脚本家', x: 2, y: 2, room: '制作フロー（構成・シーン）',
         look: { hair: '#2a2a3a', cloth: '#8a5a9a', hairStyle: 'long' },
         route: '/projects/{p}/episodes', hint: '話数構成とシーンの流れを書いています', jobKinds: ['structure'], canChat: true,
+        desk: { x: 2, y: 1, facing: 'left' },
       },
       {
         id: 'chara', name: '設定担当', title: '資料室・人物設定', x: 11, y: 2, room: 'キャラクター資料',
         look: { hair: '#d6a64a', cloth: '#3f8f6f', hairStyle: 'bob' },
         route: '/projects/{p}/characters', hint: 'キャラの設定・参照画像・LoRA', jobKinds: ['characters', 'ref_images', 'lora_train'], canChat: true,
+        desk: { x: 13, y: 4, facing: 'up' },
       },
       {
         id: 'location', name: 'ロケハン担当', title: '資料室・背景', x: 11, y: 5, room: '背景・ロケーション',
@@ -165,6 +171,7 @@ export const FLOORS: Floor[] = [
         id: 'artist', name: '漫画家', title: '漫画家', x: 12, y: 2, room: 'ネーム・作画',
         look: { hair: '#1f1f2a', cloth: '#f4f1ea', hairStyle: 'beret', accent: '#4f6fd6' },
         route: '/projects/{p}/episodes/{e}/panels', hint: 'ネームと作画。話を決めてから声をかけてください', jobKinds: ['panels', 'episode_images'], canChat: true,
+        desk: { x: 13, y: 1, facing: 'left' },
       },
       {
         id: 'designer', name: '画材担当', title: '画風・カスタマイズ', x: 2, y: 2, room: '画風・カスタマイズ',

@@ -19,6 +19,8 @@ interface Props {
   activeNpcId?: string | null;
   busyNpcIds: Set<string>;
   disabledNpcIds: Set<string>;
+  /** 報告待ち（頼んだ仕事が終わった）NPC */
+  reportNpcIds: Set<string>;
 }
 
 const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -28,11 +30,13 @@ const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
  * 移動は 矢印/WASD、会話は Enter/Space/E。クリックでも歩いて話しかけられる。
  */
 export function OfficeMap({
-  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds,
+  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds,
 }: Props) {
   const rows = floor.map.length;
   const cols = floor.map[0].length;
-  const npcAt = useMemo(() => new Map(floor.npcs.map((n) => [`${n.x},${n.y}`, n])), [floor]);
+  /** 表示位置（作業中は机の前） */
+  const posOf = useCallback((n: Npc) => (busyNpcIds.has(n.id) && n.desk ? { x: n.desk.x, y: n.desk.y } : { x: n.x, y: n.y }), [busyNpcIds]);
+  const npcAt = useMemo(() => new Map(floor.npcs.map((n) => { const q = posOf(n); return [`${q.x},${q.y}`, n]; })), [floor, posOf]);
   const walkTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [frame, setFrame] = useState<Frame>(0);
@@ -147,11 +151,12 @@ export function OfficeMap({
   };
 
   const clickNpc = (npc: Npc) => {
+    const q = posOf(npc);
     const targets = DIRS
-      .map(([dx, dy]) => ({ x: npc.x + dx, y: npc.y + dy }))
+      .map(([dx, dy]) => ({ x: q.x + dx, y: q.y + dy }))
       .filter((t) => canStep(t.x, t.y))
       .sort((a, b) => dist(a, player) - dist(b, player));
-    const face = () => onMove({ ...player, x: player.x, y: player.y, facing: facingOf(npc.x - player.x, npc.y - player.y, player.facing) });
+    const face = () => onMove({ ...player, x: player.x, y: player.y, facing: facingOf(q.x - player.x, q.y - player.y, player.facing) });
     if (!targets.length) { onTalk(npc); return; }
     if (targets.some((t) => t.x === player.x && t.y === player.y)) { face(); onTalk(npc); return; }
     walkTo(targets[0], () => onTalk(npc));
@@ -164,10 +169,12 @@ export function OfficeMap({
     if (canStep(x, y)) walkTo({ x, y });
   };
 
-  /** NPC の向き: プレイヤーが隣にいればそちらを向く */
+  /** NPC の向き: 作業中は机の方、プレイヤーが隣にいればそちらを向く */
   const npcFacing = (n: Npc): Facing => {
-    if (dist(n, player) !== 1) return 'down';
-    return facingOf(player.x - n.x, player.y - n.y, 'down');
+    const q = posOf(n);
+    if (busyNpcIds.has(n.id) && n.desk) return n.desk.facing;
+    if (dist(q, player) !== 1) return 'down';
+    return facingOf(player.x - q.x, player.y - q.y, 'down');
   };
 
   const actorStyle = (x: number, y: number) => ({ left: x * PX + (PX - AW) / 2, top: y * PX + PX - AH + 2 });
@@ -193,11 +200,12 @@ export function OfficeMap({
         const disabled = disabledNpcIds.has(n.id);
         const busy = busyNpcIds.has(n.id);
         const facing = npcFacing(n);
+        const q = posOf(n);
         return (
           <div
             key={n.id}
-            className={`actor npc ${facing} ${activeNpcId === n.id ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
-            style={{ ...actorStyle(n.x, n.y), zIndex: 2 + n.y }}
+            className={`actor npc ${facing} ${activeNpcId === n.id ? 'active' : ''} ${disabled ? 'disabled' : ''} ${busy ? 'busy' : ''}`}
+            style={{ ...actorStyle(q.x, q.y), zIndex: 2 + q.y }}
             onClick={() => clickNpc(n)}
             onMouseEnter={() => setHover(n)}
             onMouseLeave={() => setHover((h) => (h?.id === n.id ? null : h))}
@@ -207,7 +215,8 @@ export function OfficeMap({
             <div className="sprite" style={{ backgroundImage: `url(${actorUrl(n.look, facing, 0)})` }} />
             <div className="name">{n.name}</div>
             {busy && <div className="bubble">作業中…</div>}
-            {!busy && active && dist(player, n) === 1 && <div className="bubble key">Enter</div>}
+            {!busy && reportNpcIds.has(n.id) && <div className="bubble report">!</div>}
+            {!busy && active && dist(player, q) === 1 && <div className="bubble key">Enter</div>}
           </div>
         );
       })}

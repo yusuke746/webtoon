@@ -5,7 +5,7 @@ import { getImageClient } from '../image/index.js';
 import { persistImage } from '../image/storage.js';
 import {
   NAME_REVIEW_ROLES, charactersPrompt, nameCritiquePrompt,
-  panelsPrompt, panelsRevisePrompt, structurePrompt,
+  panelsPrompt, panelsRevisePrompt, reviseScenesPrompt, structurePrompt,
 } from '../prompts.js';
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds } from './visual.js';
@@ -42,7 +42,7 @@ interface StructureOutput {
 }
 
 /** あらすじ → 話数構成 + 伏線の構造データを生成し DB へ保存 */
-export async function generateStructure(projectId: number, episodeCount: number): Promise<Episode[]> {
+export async function generateStructure(projectId: number, episodeCount: number, instruction?: string): Promise<Episode[]> {
   const project = getProject(projectId);
   const existing = listEpisodes(projectId);
   const foreshadowings = listForeshadowings(projectId);
@@ -51,7 +51,7 @@ export async function generateStructure(projectId: number, episodeCount: number)
   const seriesContext = existing.length ? buildSeriesContext(projectId) : '';
   const text = await getLLMClient().complete({
     task: 'structure',
-    prompt: structurePrompt(project, episodeCount, existing, foreshadowings, seriesContext),
+    prompt: structurePrompt(project, episodeCount, existing, foreshadowings, seriesContext, instruction),
     cwd: seriesContext ? archiveDir(project) : undefined,
   });
   const out = extractJson<StructureOutput>(text);
@@ -132,7 +132,35 @@ interface PanelsOutput {
   }[];
 }
 
-export async function generatePanels(episodeId: number): Promise<Panel[]> {
+/**
+ * 担当編集の指示に沿って1話分のシーン構成を書き直す（話数・ID は維持）。
+ * オフィスの会話「直してほしい」から呼ばれる。
+ */
+export async function reviseEpisodeScenes(episodeId: number, instruction: string): Promise<Episode> {
+  const epRow = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!epRow) throw new Error(`エピソードが見つかりません: ${episodeId}`);
+  const episode = rowToEpisode(epRow as any);
+  const project = getProject(episode.projectId);
+  const seriesContext = buildSeriesContext(episode.projectId, { uptoEpisode: episode.number, includePreviousScript: false, maxChars: 8000 });
+  const text = await getLLMClient().complete({
+    task: 'revise_scenes',
+    prompt: reviseScenesPrompt(project, episode, instruction, seriesContext),
+    cwd: seriesContext ? archiveDir(project) : undefined,
+  });
+  const out = extractJson<{ title?: string; summary?: string; scenes?: Scene[] }>(text);
+  db.prepare('UPDATE episodes SET title = ?, summary = ?, scenes = ? WHERE id = ?').run(
+    out.title?.trim() || episode.title, out.summary?.trim() || episode.summary,
+    JSON.stringify(out.scenes?.length ? out.scenes : episode.scenes), episodeId,
+  );
+  safeSync(episode.projectId);
+  return rowToEpisode(db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId) as any);
+}
+
+/**
+ * ネーム生成。instruction（担当編集の指示）があり既にネームがある場合は、
+ * そのネームを指示に沿って改稿する（初稿からやり直さない）。
+ */
+export async function generatePanels(episodeId: number, instruction?: string): Promise<Panel[]> {
   const epRow = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
   if (!epRow) throw new Error(`エピソードが見つかりません: ${episodeId}`);
   const episode = rowToEpisode(epRow as any);
@@ -144,12 +172,32 @@ export async function generatePanels(episodeId: number): Promise<Panel[]> {
   // 前の話までの要約と直前の話の全文を渡し、人物の現在地・口調を引き継ぐ
   const seriesContext = buildSeriesContext(episode.projectId, { uptoEpisode: episode.number });
   const cwd = seriesContext ? archiveDir(project) : undefined;
-  const text = await llm.complete({
-    task: 'panels',
-    prompt: panelsPrompt(project, episode, characters, backgrounds, seriesContext),
-    cwd,
-  });
-  let out = extractJson<PanelsOutput>(text);
+  const existingPanels = listPanels(episodeId);
+  let out: PanelsOutput;
+  if (instruction?.trim() && existingPanels.length) {
+    // 改稿: 現在のネームを「担当編集の批評」として改稿プロンプトに渡す
+    const current: PanelsOutput = {
+      panels: existingPanels.map((p) => ({
+        layout: p.layout, description: p.description, dialogues: p.dialogues, imagePrompt: p.imagePrompt,
+        characters: p.characterIds.map((id) => characters.find((c) => c.id === id)?.name).filter((n): n is string => !!n),
+        background: p.backgroundId ? backgrounds.find((b) => b.id === p.backgroundId)?.name ?? null : null,
+      })),
+    };
+    const text = await llm.complete({
+      task: 'panels',
+      prompt: panelsRevisePrompt(project, episode, characters, JSON.stringify(current.panels, null, 1), [{ roleName: '担当編集', content: instruction.trim() }]),
+      cwd,
+    });
+    out = extractJson<PanelsOutput>(text);
+    if (!(out.panels ?? []).length) out = current;
+  } else {
+    const text = await llm.complete({
+      task: 'panels',
+      prompt: panelsPrompt(project, episode, characters, backgrounds, seriesContext, instruction),
+      cwd,
+    });
+    out = extractJson<PanelsOutput>(text);
+  }
 
   // ネーム批評ループ: 演出担当・読者代表が批評し、改稿版を生成する。
   // 議論ログは AI編集会議に保存され、ユーザーが後から確認できる。

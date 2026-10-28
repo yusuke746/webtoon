@@ -6,6 +6,15 @@ import type {
 
 const JSON_ONLY = '出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。';
 
+/** 担当編集からの指示（会話で伝えた要望）。最優先で反映させる */
+function instructionSection(instruction?: string): string {
+  if (!instruction?.trim()) return '';
+  return `
+## 担当編集からの指示（最優先で反映すること）
+${instruction.trim()}
+`;
+}
+
 /**
  * 連載マネージャーが用意した文脈（連載メモ・各話要約・直前の話の全文）をプロンプトへ差し込む。
  * アーカイブが空なら何も出さない。
@@ -27,6 +36,7 @@ export function structurePrompt(
   existingEpisodes: Episode[],
   foreshadowings: Foreshadowing[],
   seriesContext?: string,
+  instruction?: string,
 ): string {
   const tmpl: StoryTemplate = project.storyTemplate;
   const existing = existingEpisodes.length
@@ -53,7 +63,7 @@ ${project.synopsis}
 - 1話あたり約${tmpl.pagesPerEpisode}ページ
 - 追加指示: ${tmpl.instructions || 'なし'}
 ${existing}${fs}
-${seriesContextSection(seriesContext)}
+${seriesContextSection(seriesContext)}${instructionSection(instruction)}
 ## 依頼
 新しく${episodeCount}話分の構成を作成してください。物語に「伏線(setup)」と「回収(payoff)」を意図的に設計し、各シーンにどの伏線が関わるかを明記してください。
 
@@ -120,6 +130,7 @@ export function panelsPrompt(
   characters: Character[],
   backgrounds: Background[] = [],
   seriesContext?: string,
+  instruction?: string,
 ): string {
   const rules: PanelRules = project.panelRules;
   const bgSection = backgrounds.length
@@ -140,7 +151,7 @@ ${episode.scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.summary}（登場: ${s
 ## キャラクター設定（セリフの口調・外見描写に反映すること）
 ${characters.map((c) => `- ${c.name}（${c.role}）: 外見=${c.appearance} / 性格=${c.personality}`).join('\n')}
 ${bgSection}
-${seriesContextSection(seriesContext)}
+${seriesContextSection(seriesContext)}${instructionSection(instruction)}
 ${panelRulesSection(project)}
 
 ## 依頼
@@ -494,6 +505,34 @@ ${message}
 {
   "reply": "返答（日本語。改行可）",
   "action": ${persona.canApply ? '"apply_change" または null  … 発言が «構成・伏線・話の内容を変える具体的な要望» で、そのまま反映して良いなら "apply_change"。質問や雑談なら null' : 'null'}
+}
+${JSON_ONLY}`;
+}
+
+/** 1話分のシーン構成を、担当編集の指示に沿って書き直す */
+export function reviseScenesPrompt(project: Project, episode: Episode, instruction: string, seriesContext?: string): string {
+  return `あなたはプロの漫画原作者です。以下の話のシーン構成を、担当編集の指示に沿って書き直してください。
+話数と大筋は維持し、指示に関係ない部分はなるべく変えないでください。
+
+## 作品あらすじ
+${project.synopsis}
+
+## 対象の話
+第${episode.number}話「${episode.title}」: ${episode.summary}
+
+## 現在のシーン構成
+${episode.scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.summary}（登場: ${s.characters.join('・')} / 伏線: ${(s.foreshadowRefs ?? []).map((r) => `${r.title}(${r.action})`).join('、') || 'なし'}）`).join('\n')}
+${seriesContextSection(seriesContext)}
+## 担当編集からの指示
+${instruction.trim()}
+
+## 出力形式（JSON）
+{
+  "title": "話タイトル（変更不要ならそのまま）",
+  "summary": "話の要約",
+  "scenes": [
+    { "title": "シーン名", "summary": "シーンの内容", "characters": ["登場キャラ名"], "foreshadowRefs": [{"title": "伏線タイトル", "action": "setup または payoff"}] }
+  ]
 }
 ${JSON_ONLY}`;
 }

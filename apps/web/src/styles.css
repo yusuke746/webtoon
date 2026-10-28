@@ -793,3 +793,45 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .talk-menu button .cur { display: inline-block; width: 20px; color: #ffd866; }
 .talk-input textarea { width: 100%; margin: 6px 0 8px; font-size: 14px; color: var(--ink); background: #fff; }
 .talk-input .muted { color: #c8d0ff; font-size: 12px; }
+
+/* ---- 報告待ちの「!」、机で作業中 ---- */
+.office-map .actor .bubble.report {
+  background: #ffd866; color: #1f1a24; font-weight: 900; font-size: 15px; padding: 0 8px; animation: bob .7s infinite;
+}
+.office-map .actor.busy { transition: left .6s ease, top .6s ease; }
+
+/* ---- 会話ウィンドウの成果物表示 ---- */
+.talk.wide { width: min(980px, 96%); }
+.talk-content {
+  max-height: 46vh; overflow: auto; background: rgba(255,255,255,.95); color: var(--ink); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 10px; text-shadow: none; font-size: 13px; cursor: default;
+}
+.talk-content h4 { margin: 0 0 6px; font-size: 14px; }
+.talk-content ol { margin: 0; padding-left: 20px; }
+.talk-content li { margin: 4px 0; }
+.talk-content .muted { color: var(--sub); }
+.talk-content .pages { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.talk-content .dialogues { font-size: 12px; min-width: 240px; flex: 1; }
+.talk-content .dialogues div { margin: 2px 0; }
+
+/* ---- 進行表（クエストログ） ---- */
+.quest { margin-bottom: 12px; }
+.quest-title { font-weight: 800; margin-bottom: 6px; letter-spacing: .04em; display: flex; justify-content: space-between; }
+.quest-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; border: 2px solid transparent;
+}
+.quest-row:hover { background: #2d2740; }
+.quest-row.focus { border-color: #ffd866; background: #2d2740; }
+.quest-row .ep { width: 46px; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+.quest-row .ttl { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cfc9dc; }
+.quest-row .steps { display: flex; gap: 3px; }
+.quest-row .qstep {
+  font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #3a3350; color: #9a93ad; white-space: nowrap;
+}
+.quest-row .qstep.done { background: #2f6d3b; color: #d9f5de; }
+.quest-row .qstep.active { background: #ffd866; color: #1f1a24; animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+.quest-next { font-size: 12px; color: #ffd866; margin-top: 8px; line-height: 1.5; }
+.quest-empty { font-size: 12px; color: #9a93ad; }
+.npc-link .report-mark { color: #ffd866; font-weight: 900; }
+.office-side { width: 280px; }

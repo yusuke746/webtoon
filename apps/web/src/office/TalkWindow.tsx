@@ -1,58 +1,56 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Npc } from './floors';
+import type { Choice } from './workflow';
 
 /**
  * スーファミ RPG 風の会話ウィンドウ。
- * - 定型文をタイプライター表示（Enter/クリックで送り）
- * - 最後にメニュー（部屋に入る / 相談する / やめる）
- * - 相談はテキスト入力 → LLM の返答を表示 → 提案があれば「構成に反映」
+ * - 台詞をタイプライター表示（Enter/クリックで送り。タイプ中なら全文表示）
+ * - メニュー（選択肢は呼び出し側が決める）
+ * - 成果物（シーン構成・原稿）を窓の中に表示してから選択肢
+ * - テキスト入力（相談・修正指示）
  */
 
-export type TalkPhase = 'lines' | 'menu' | 'input' | 'waiting' | 'reply';
+export type TalkPhase = 'lines' | 'menu' | 'deliver' | 'input' | 'waiting' | 'reply';
 
 export interface TalkState {
   npc: Npc;
   lines: string[];
   index: number;
   phase: TalkPhase;
+  choices: Choice[];
+  /** 成果物の表示（deliver / menu のとき窓の上部に出す） */
+  content?: React.ReactNode;
   reply: string | null;
-  /** LLM が提案したアクション */
-  action: 'apply_change' | null;
+  /** 入力の用途（chat / scenes / panels / structure） */
+  inputPurpose: string;
+  inputHint: string;
   lastMessage: string;
   history: { role: 'user' | 'npc'; text: string }[];
-  disabled: boolean;
 }
 
 interface Props {
   talk: TalkState;
   onAdvance: () => void;
-  onChoose: (choice: 'enter' | 'chat' | 'close' | 'apply') => void;
+  onChoose: (key: string) => void;
   onSend: (text: string) => void;
   onCancelInput: () => void;
 }
 
 export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }: Props) {
-  const text = talk.phase === 'reply' ? (talk.reply ?? '') : talk.phase === 'waiting' ? '' : talk.lines[talk.index] ?? '';
+  const text = talk.phase === 'reply' ? (talk.reply ?? '') : talk.phase === 'lines' ? talk.lines[talk.index] ?? '' : '';
   const [typed, finishTyping] = useTypewriter(text, `${talk.npc.id}:${talk.phase}:${talk.index}:${talk.reply?.length ?? 0}`);
   const done = typed.length >= text.length;
-  /** タイプ中なら全文表示、表示済みなら次へ */
   const advanceOrFinish = () => { if (done) onAdvance(); else finishTyping(); };
 
-  const choices: { key: 'enter' | 'chat' | 'close' | 'apply'; label: string }[] = [];
-  if (talk.phase === 'menu') {
-    if (!talk.disabled) choices.push({ key: 'enter', label: `${talk.npc.room}へ入る` });
-    if (!talk.disabled && talk.npc.canChat) choices.push({ key: 'chat', label: '相談する・要望を伝える' });
-    if (talk.action === 'apply_change') choices.push({ key: 'apply', label: 'その内容を構成に反映する' });
-    choices.push({ key: 'close', label: 'また今度' });
-  }
+  const showMenu = talk.phase === 'menu' || talk.phase === 'deliver';
+  const choices = showMenu ? talk.choices : [];
   const [cursor, setCursor] = useState(0);
-  useEffect(() => { setCursor(0); }, [talk.phase]);
+  useEffect(() => { setCursor(0); }, [talk.phase, talk.choices]);
 
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (talk.phase === 'input') inputRef.current?.focus(); }, [talk.phase]);
 
-  // キー操作: 送り・メニュー選択・Esc
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (talk.phase === 'input') {
@@ -60,7 +58,8 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
         return;
       }
       if (e.key === 'Escape') { e.preventDefault(); onChoose('close'); return; }
-      if (talk.phase === 'menu') {
+      if (showMenu) {
+        if (!choices.length) return;
         if (e.key === 'ArrowUp' || e.key === 'w') { e.preventDefault(); setCursor((c) => (c + choices.length - 1) % choices.length); }
         else if (e.key === 'ArrowDown' || e.key === 's') { e.preventDefault(); setCursor((c) => (c + 1) % choices.length); }
         else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onChoose(choices[cursor].key); }
@@ -73,7 +72,7 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [talk.phase, choices.length, cursor, onAdvance, onChoose, onCancelInput, done]);
+  }, [talk.phase, choices, cursor, onAdvance, onChoose, onCancelInput, done, showMenu]);
 
   const submit = () => {
     const t = input.trim();
@@ -83,7 +82,8 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
   };
 
   return (
-    <div className="talk" onClick={() => { if (talk.phase === 'lines' || talk.phase === 'reply') advanceOrFinish(); }}>
+    <div className={`talk ${talk.phase === 'deliver' || (talk.phase === 'menu' && talk.content) ? 'wide' : ''}`}
+      onClick={() => { if (talk.phase === 'lines' || talk.phase === 'reply') advanceOrFinish(); }}>
       <div className="talk-name">{talk.npc.name}<span>{talk.npc.title}</span></div>
       <div className="talk-box">
         {talk.phase === 'waiting' && <div className="talk-text">……<span className="talk-dots" /></div>}
@@ -93,9 +93,10 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
             {done && <span className="talk-next">▼</span>}
           </div>
         )}
-        {talk.phase === 'menu' && (
+        {showMenu && (
           <div className="talk-menu">
-            {talk.reply && <div className="talk-text small">{talk.reply}</div>}
+            {talk.content && <div className="talk-content" onClick={(e) => e.stopPropagation()}>{talk.content}</div>}
+            {talk.reply && !talk.content && <div className="talk-text small">{talk.reply}</div>}
             {choices.map((c, i) => (
               <button key={c.key} className={i === cursor ? 'active' : ''}
                 onMouseEnter={() => setCursor(i)} onClick={(e) => { e.stopPropagation(); onChoose(c.key); }}>
@@ -106,11 +107,11 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
         )}
         {talk.phase === 'input' && (
           <div className="talk-input" onClick={(e) => e.stopPropagation()}>
-            <div className="muted">要望・質問を書いてください（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
+            <div className="muted">{talk.inputPurpose === 'chat' ? '要望・質問を書いてください' : '直してほしい点を書いてください'}（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
             <textarea ref={inputRef} value={input} rows={3}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              placeholder={placeholderFor(talk.npc)} />
+              placeholder={talk.inputHint} />
             <div className="row tight">
               <button className="primary sm" onClick={submit} disabled={!input.trim()}>送信</button>
               <button className="ghost sm" onClick={onCancelInput}>戻る</button>
@@ -120,17 +121,6 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
       </div>
     </div>
   );
-}
-
-function placeholderFor(npc: Npc): string {
-  switch (npc.id) {
-    case 'chief': return '例: 2話にライバルの初登場シーンを入れたい / ペンダントの回収を3話に延ばして';
-    case 'writer': return '例: 第3話はもっとクロの出番を増やして / 主人公の動機をはっきりさせたい';
-    case 'artist': return '例: 見せ場のコマをもっと大きく / 1ページ目はテンポよく小ゴマで';
-    case 'manager': return '例: 灰田と静の関係はどこまで描いた? / 第1話で出た設定を教えて';
-    case 'meeting': return '例: 第2話の引きは十分か議論してほしい';
-    default: return 'ご要望をどうぞ';
-  }
 }
 
 /** タイプライター表示。key が変わると最初から打ち直す。finish() で全文表示 */

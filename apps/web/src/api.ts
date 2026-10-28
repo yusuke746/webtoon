@@ -160,4 +160,12 @@ export const api = {
   // オフィスの NPC との相談
   talk: (projectId: number, npcId: string, message: string, history: { role: 'user' | 'npc'; text: string }[]) =>
     post<{ reply: string; action: 'apply_change' | null }>(`/projects/${projectId}/talk`, { npcId, message, history }),
+
+  // オフィス用ジョブ（会話から頼む作業）
+  startStructureJob: (projectId: number, episodeCount: number, instruction?: string) =>
+    post<Job>(`/projects/${projectId}/jobs/structure`, { episodeCount, instruction }),
+  startReviseScenesJob: (episodeId: number, instruction: string) =>
+    post<Job>(`/episodes/${episodeId}/jobs/revise-scenes`, { instruction }),
+  startPanelsJob: (episodeId: number, instruction?: string) =>
+    post<Job>(`/episodes/${episodeId}/jobs/panels`, { instruction }),
 };

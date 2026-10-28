@@ -188,6 +188,20 @@ export class MockLLMClient implements LLMClient {
           '- 各話の最終コマは必ず引きで終える',
         ].join('\n');
 
+      case 'revise_scenes': {
+        const m = req.prompt.match(/## 担当編集からの指示\n([\s\S]*?)\n\n## 出力形式/);
+        const inst = m?.[1]?.trim() ?? '';
+        return JSON.stringify({
+          title: '追跡者',
+          summary: `少女を追う組織の影が迫る。（編集指示「${inst.slice(0, 20)}」を反映・モック）`,
+          scenes: [
+            { title: '不穏', summary: '黒服の男たちが街に現れる。', characters: ['追跡者'], foreshadowRefs: [] },
+            { title: '指示の反映', summary: `${inst || '指示なし'}を踏まえた新しいシーン。`, characters: ['主人公', '少女'], foreshadowRefs: [] },
+            { title: '逃走', summary: '二人は街を出る決意をする。', characters: ['主人公', '少女'], foreshadowRefs: [{ title: '少女のペンダント', action: 'payoff' }] },
+          ],
+        });
+      }
+
       case 'talk': {
         const who = req.system ?? '';
         const m = req.prompt.match(/## 今回の発言\n([\s\S]*?)\n/);

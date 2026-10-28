@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Job } from '@manga/shared';
+import type { Episode, Job } from '@manga/shared';
 import { api } from '../api';
 import { FLOORS, FLOOR_BY_ID, npcForPath, type Floor, type Npc } from './floors';
 import { OfficeMap, type PlayerState } from './OfficeMap';
 import { npcLines, type OfficeStatus } from './dialogue';
 import { TalkWindow, type TalkState } from './TalkWindow';
+import {
+  inputHintFor, nextHint, pickChoices, planTalk, questRows,
+  type Choice, type Delivery, type Requested,
+} from './workflow';
+import { EpisodesView, PagesView, ScenesView } from './Deliverables';
 
 /**
- * RPG 風オフィスのシェル。
+ * RPG 風オフィス = 制作工程そのもの。
  *
- * サイドバーの代わりにオフィスのマップが常に表示され、NPC に話しかけると
- * 会話ウィンドウ（定型文 → メニュー → 相談）が開き、「部屋に入る」で既存ページが
- * ダイアログ（部屋の中身）として開く。URL は従来のまま。
- *   /office                      … マップのみ（作品未選択）
- *   /projects/:id/office         … マップのみ（作品選択中）
- *   /projects/:id/characters 等   … マップ + 部屋ダイアログ
+ * プレイヤーは担当編集。NPC に仕事を頼む（ジョブ化）と NPC は机へ向かい、
+ * 終わると「!」を出して報告に来る。成果物（シーン構成・原稿）は会話ウィンドウで受け取り、
+ * その場で「OK」「直してほしい」を返す。従来のページは「書類で見る」から開ける補助。
  */
 export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const { projectId: pid, episodeId } = useParams();
@@ -27,7 +29,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const current = useMemo(() => npcForPath(location.pathname), [location.pathname]);
   const dialogOpen = !isBase;
 
-  // 作品の状態（ヘッダ表示と NPC の定型文に使う）
+  // ---- 作品の状態 ----
   const [status, setStatus] = useState<OfficeStatus | null>(null);
   const loadStatus = useCallback(async () => {
     if (!projectId) { setStatus(null); return; }
@@ -43,15 +45,24 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       setStatus(null);
     }
   }, [projectId]);
-  // ページ（部屋）で何か変えた後に戻ってきたら読み直す
   useEffect(() => { loadStatus(); }, [loadStatus, location.pathname]);
 
-  // 直近に開いた話（漫画家に話しかけたとき、その話のネームへ）
+  // ---- 担当中の話 ----
+  const focusKey = `office:lastEpisode:${projectId}`;
+  const [focusId, setFocusId] = useState<number | null>(() => {
+    const v = projectId ? localStorage.getItem(`office:lastEpisode:${projectId}`) : null;
+    return v ? Number(v) : null;
+  });
   useEffect(() => {
-    if (projectId && episodeId) localStorage.setItem(`office:lastEpisode:${projectId}`, episodeId);
-  }, [projectId, episodeId]);
+    if (projectId && episodeId) { localStorage.setItem(focusKey, episodeId); setFocusId(Number(episodeId)); }
+  }, [projectId, episodeId, focusKey]);
+  const setFocus = useCallback((id: number | null) => {
+    setFocusId(id);
+    if (projectId) { if (id) localStorage.setItem(focusKey, String(id)); else localStorage.removeItem(focusKey); }
+  }, [projectId, focusKey]);
+  const focus: Episode | null = useMemo(() => status?.episodes.find((e) => e.id === focusId) ?? null, [status, focusId]);
 
-  // 現在の階とプレイヤー位置（セッション内で保持）
+  // ---- 階とプレイヤー ----
   const [floorId, setFloorId] = useState<string>(() => sessionStorage.getItem('office:floor') ?? '1F');
   const [player, setPlayer] = useState<PlayerState>(() => {
     const saved = sessionStorage.getItem('office:player');
@@ -60,8 +71,6 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   });
   useEffect(() => { sessionStorage.setItem('office:floor', floorId); }, [floorId]);
   useEffect(() => { sessionStorage.setItem('office:player', JSON.stringify(player)); }, [player]);
-
-  // ダイアログを開いている NPC の階へ合わせる（リンクで直接来た場合も含む）
   useEffect(() => {
     if (current && current.floor.id !== floorId) {
       setFloorId(current.floor.id);
@@ -69,65 +78,122 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.npc.id]);
-
-  // 作品未選択のときは 1F（受付）だけ
   useEffect(() => { if (!projectId && floorId !== '1F') { setFloorId('1F'); setPlayer({ ...FLOOR_BY_ID['1F'].spawn, facing: 'down' }); } }, [projectId, floorId]);
   const floor: Floor = (projectId ? FLOOR_BY_ID[floorId] : FLOOR_BY_ID['1F']) ?? FLOOR_BY_ID['1F'];
 
-  // 作業中ジョブ → NPC の頭上に表示
+  // ---- ジョブ: 頼んだ仕事の控えと報告 ----
+  const reqKey = `office:requested:${projectId}`;
+  const delKey = `office:deliveries:${projectId}`;
+  const [requested, setRequested] = useState<Requested[]>(() => JSON.parse(sessionStorage.getItem(`office:requested:${projectId}`) ?? '[]'));
+  const [deliveries, setDeliveries] = useState<Delivery[]>(() => JSON.parse(sessionStorage.getItem(`office:deliveries:${projectId}`) ?? '[]'));
+  useEffect(() => { sessionStorage.setItem(reqKey, JSON.stringify(requested)); }, [requested, reqKey]);
+  useEffect(() => { sessionStorage.setItem(delKey, JSON.stringify(deliveries)); }, [deliveries, delKey]);
+
   const [jobs, setJobs] = useState<Job[]>([]);
+  const requestedRef = useRef(requested);
+  requestedRef.current = requested;
+
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const say = useCallback((msg: string, ms = 3200) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), ms);
+  }, []);
+
   useEffect(() => {
     if (!projectId) { setJobs([]); return; }
     let alive = true;
-    const poll = () => api.listActiveJobs(projectId).then((j) => alive && setJobs(j)).catch(() => undefined);
+    const poll = async () => {
+      try {
+        const active = await api.listActiveJobs(projectId);
+        if (!alive) return;
+        setJobs(active);
+        // 頼んだ仕事が終わっていれば報告に変える
+        const finished = requestedRef.current.filter((r) => !active.some((j) => j.id === r.jobId));
+        for (const r of finished) {
+          const job = await api.getJob(r.jobId).catch(() => null);
+          if (!alive) return;
+          const ok = job?.status === 'succeeded';
+          const npcName = FLOORS.flatMap((f) => f.npcs).find((n) => n.id === r.npcId)?.name ?? r.npcId;
+          setRequested((rs) => rs.filter((x) => x.jobId !== r.jobId));
+          setDeliveries((ds) => [...ds.filter((d) => d.npcId !== r.npcId), { ...r, ok, error: job?.error ?? undefined }]);
+          say(ok ? `${npcName}: 「${r.label}」ができました。話しかけてください。` : `${npcName}: 「${r.label}」に失敗しました。`, 5000);
+          loadStatus();
+        }
+      } catch { /* オフライン時は次回 */ }
+    };
     poll();
-    const t = setInterval(poll, 4000);
+    const t = setInterval(poll, 3000);
     return () => { alive = false; clearInterval(t); };
-  }, [projectId, location.pathname]);
+  }, [projectId, loadStatus, say]);
+
+  const track = useCallback((job: Job, r: Omit<Requested, 'jobId'>) => {
+    setRequested((rs) => [...rs, { ...r, jobId: job.id }]);
+    setJobs((js) => [...js, job]);
+  }, []);
+
   const busyNpcIds = useMemo(() => {
     const kinds = new Set(jobs.map((j) => j.kind as string));
     const ids = new Set<string>();
     for (const f of FLOORS) for (const n of f.npcs) if (n.jobKinds?.some((k) => kinds.has(k))) ids.add(n.id);
     return ids;
   }, [jobs]);
-
+  const reportNpcIds = useMemo(() => new Set(deliveries.map((d) => d.npcId)), [deliveries]);
   const disabledNpcIds = useMemo(() => {
     const ids = new Set<string>();
     if (!projectId) for (const f of FLOORS) for (const n of f.npcs) if (!n.global) ids.add(n.id);
     return ids;
   }, [projectId]);
 
-  // 一言メッセージ
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const say = useCallback((msg: string) => {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2800);
-  }, []);
-
   const basePath = projectId ? `/projects/${projectId}/office` : '/office';
 
   // ---- 会話 ----
   const [talk, setTalk] = useState<TalkState | null>(null);
+  const rules = status?.project?.panelRules;
 
   const routeFor = useCallback((npc: Npc): string => {
     let route = npc.route.replace('{p}', String(projectId ?? ''));
     if (route.includes('{e}')) {
-      const last = projectId ? localStorage.getItem(`office:lastEpisode:${projectId}`) : null;
-      if (!last) { say('どの話を描くか、先に2Fの脚本家と決めてください。'); return `/projects/${projectId}/episodes`; }
-      route = route.replace('{e}', last);
+      if (!focusId) return `/projects/${projectId}/episodes`;
+      route = route.replace('{e}', String(focusId));
     }
     return route;
-  }, [projectId, say]);
+  }, [projectId, focusId]);
+
+  /** 成果物の表示を用意する（原稿は取得が要るので非同期） */
+  const buildContent = useCallback(async (kind: Delivery['kind'], ep: Episode | null, countBefore?: number): Promise<React.ReactNode> => {
+    if (kind === 'structure') {
+      const eps = status?.episodes ?? [];
+      const added = countBefore !== undefined ? eps.slice(countBefore) : eps.slice(-2);
+      return <EpisodesView episodes={added.length ? added : eps} title="新しい話の構成" />;
+    }
+    if (!ep) return null;
+    if (kind === 'scenes') return <ScenesView episode={ep} />;
+    if ((kind === 'panels' || kind === 'images') && rules) {
+      const full = await api.getEpisode(ep.id);
+      return <PagesView episode={full} rules={rules} />;
+    }
+    return null;
+  }, [status, rules]);
 
   const startTalk = useCallback((npc: Npc) => {
-    const disabled = disabledNpcIds.has(npc.id);
-    setTalk({
-      npc, lines: npcLines(npc, status), index: 0, phase: 'lines', reply: null, action: null,
-      lastMessage: '', history: [], disabled,
-    });
-  }, [disabledNpcIds, status]);
+    const busy = busyNpcIds.has(npc.id);
+    const delivery = deliveries.find((d) => d.npcId === npc.id) ?? null;
+    if (delivery) setDeliveries((ds) => ds.filter((d) => d.npcId !== npc.id));
+    const plan = planTalk(npc, status, focus, delivery, busy, npcLines(npc, status));
+    const base: TalkState = {
+      npc, lines: plan.lines, index: 0, phase: 'lines', choices: plan.choices, reply: null,
+      inputPurpose: 'chat', inputHint: inputHintFor('chat', npc), lastMessage: '', history: [],
+    };
+    setTalk(base);
+    if (plan.deliver) {
+      const ep = status?.episodes.find((e) => e.id === plan.deliver!.episodeId) ?? null;
+      if (ep) setFocus(ep.id);
+      buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore).then((content) =>
+        setTalk((t) => (t && t.npc.id === npc.id ? { ...t, content } : t)));
+    }
+  }, [busyNpcIds, deliveries, status, focus, buildContent, setFocus]);
 
   const advance = useCallback(() => {
     setTalk((t) => {
@@ -135,34 +201,155 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       if (t.phase === 'reply') return { ...t, phase: 'menu' };
       if (t.phase !== 'lines') return t;
       if (t.index + 1 < t.lines.length) return { ...t, index: t.index + 1 };
-      return { ...t, phase: 'menu' };
+      return { ...t, phase: t.content ? 'deliver' : 'menu' };
     });
   }, []);
 
-  const choose = useCallback((choice: 'enter' | 'chat' | 'close' | 'apply') => {
+  /** 台詞だけ言って終わる（依頼を受けたとき） */
+  const sayAndClose = useCallback((lines: string[], closeLabel = 'よろしく') => {
+    setTalk((t) => t && { ...t, lines, index: 0, phase: 'lines', content: undefined, reply: null, choices: [{ key: 'close', label: closeLabel }] });
+  }, []);
+
+  const openInput = useCallback((purpose: string) => {
+    setTalk((t) => t && { ...t, phase: 'input', inputPurpose: purpose, inputHint: inputHintFor(purpose, t.npc), reply: null });
+  }, []);
+
+  const showDeliver = useCallback(async (kind: Delivery['kind'], ep: Episode, choices: Choice[]) => {
+    const content = await buildContent(kind, ep);
+    setTalk((t) => t && { ...t, phase: 'deliver', content, choices, reply: null });
+  }, [buildContent]);
+
+  const choose = useCallback(async (key: string) => {
     if (!talk) return;
-    if (choice === 'close') { setTalk(null); return; }
-    if (choice === 'enter') { setTalk(null); navigate(routeFor(talk.npc)); return; }
-    if (choice === 'chat') { setTalk({ ...talk, phase: 'input', reply: null, action: null }); return; }
-    if (choice === 'apply' && projectId) {
-      setTalk({ ...talk, phase: 'waiting', action: null });
+    const npc = talk.npc;
+    const eps = status?.episodes ?? [];
+    const fail = (e: Error) => sayAndClose([`うまく頼めませんでした: ${e.message}`], '閉じる');
+
+    if (key === 'close') { setTalk(null); return; }
+    if (key === 'enter') { setTalk(null); navigate(routeFor(npc)); return; }
+    if (key === 'chat') { openInput('chat'); return; }
+    if (key === 'apply' && projectId) {
+      setTalk({ ...talk, phase: 'waiting' });
       api.applyChange(projectId, talk.lastMessage)
-        .then(() => { setTalk((t) => t && { ...t, phase: 'reply', reply: '反映した。構成と伏線を確認してくれ。', action: null }); loadStatus(); })
-        .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `反映に失敗した: ${e.message}`, action: null }));
+        .then(() => { setTalk((t) => t && { ...t, phase: 'reply', reply: '反映した。構成と伏線を確認してくれ。', choices: t.choices.filter((c) => c.key !== 'apply') }); loadStatus(); })
+        .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `反映に失敗した: ${e.message}` }));
+      return;
     }
-  }, [talk, navigate, routeFor, projectId, loadStatus]);
 
-  const send = useCallback((text: string) => {
+    if (key.startsWith('structure:') && projectId) {
+      const n = Number(key.split(':')[1]) || 1;
+      try {
+        const job = await api.startStructureJob(projectId, n);
+        track(job, { npcId: 'writer', kind: 'structure', label: job.label, episodeCountBefore: eps.length });
+        sayAndClose([`わかりました。${n}話分、書き上げたら声をかけます。`, '机に戻ります。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'scenes:show' && focus) {
+      await showDeliver('scenes', focus, [
+        { key: 'handoff:artist', label: 'OK、3Fの漫画家に回す' }, { key: 'scenes:revise', label: '直してほしい（指示を書く）' },
+        { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' },
+      ]);
+      return;
+    }
+    if (key === 'scenes:revise') { openInput('scenes'); return; }
+    if (key === 'handoff:artist' && focus) {
+      sayAndClose([`第${focus.number}話は漫画家に回しておきます。`, '3Fの作画室で声をかけてください。'], 'わかった');
+      return;
+    }
+    if (key === 'panels:generate' && focus) {
+      try {
+        const job = await api.startPanelsJob(focus.id);
+        track(job, { npcId: 'artist', kind: 'panels', episodeId: focus.id, label: job.label });
+        sayAndClose([`第${focus.number}話だね。ネームを切ってくる。`, '上がったら呼ぶよ。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'panels:show' && focus) {
+      const choices: Choice[] = focus.status === 'rendered'
+        ? [{ key: 'episode:next', label: '次の話へ' }, { key: 'panels:revise', label: 'ネームから直したい' }, { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' }]
+        : [{ key: 'images:generate', label: 'OK、作画に入ってくれ' }, { key: 'panels:revise', label: 'ネームを直してほしい' }, { key: 'enter', label: '書類で見る' }, { key: 'close', label: 'また今度' }];
+      await showDeliver(focus.status === 'rendered' ? 'images' : 'panels', focus, choices);
+      return;
+    }
+    if (key === 'panels:revise') { openInput('panels'); return; }
+    if (key === 'images:generate' && focus) {
+      try {
+        const job = await api.generateEpisodeImages(focus.id);
+        track(job, { npcId: 'artist', kind: 'images', episodeId: focus.id, label: job.label });
+        sayAndClose(['よし、作画に入る。', 'コマ数ぶん時間がかかるから、他の仕事を進めてて。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'episode:next') {
+      const next = focus ? eps.find((e) => e.number === focus.number + 1) : eps[0];
+      if (next) {
+        setFocus(next.id);
+        sayAndClose([`次は第${next.number}話「${next.title}」だね。`, next.status === 'structured' || next.status === 'draft' ? '構成は2Fの脚本家に確認してから、またここへ。' : '準備ができたら声をかけて。'], 'わかった');
+      } else {
+        sayAndClose(['次の話はまだ構成がないよ。', '2Fの脚本家に続きを頼んできて。'], 'わかった');
+      }
+      return;
+    }
+    if (key === 'archive:register' && focus) {
+      try {
+        const job = await api.registerEpisodeToArchive(focus.id);
+        track(job, { npcId: 'manager', kind: 'archive', episodeId: focus.id, label: job.label });
+        sayAndClose([`第${focus.number}話ですね。要約して連載メモを更新します。`, '少し時間をください。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'pick:menu') {
+      setTalk({ ...talk, phase: 'menu', content: undefined, choices: [...pickChoices(eps), { key: 'close', label: 'また今度' }] });
+      return;
+    }
+    if (key.startsWith('pick:')) {
+      const id = Number(key.split(':')[1]);
+      const ep = eps.find((e) => e.id === id);
+      if (!ep) return;
+      setFocus(ep.id);
+      const plan = planTalk(npc, status, ep, null, false, []);
+      setTalk({ ...talk, phase: 'menu', content: undefined, reply: `第${ep.number}話「${ep.title}」を担当します。`, choices: plan.choices });
+      return;
+    }
+  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus]);
+
+  const send = useCallback(async (text: string) => {
     if (!talk || !projectId) return;
-    const history = [...talk.history, { role: 'user' as const, text }];
-    setTalk({ ...talk, phase: 'waiting', lastMessage: text, history });
-    api.talk(projectId, talk.npc.id, text, talk.history)
-      .then((r) => setTalk((t) => t && { ...t, phase: 'reply', reply: r.reply, action: r.action, history: [...history, { role: 'npc', text: r.reply }] }))
-      .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（返事がもらえませんでした: ${e.message}）`, action: null }));
-  }, [talk, projectId]);
+    const purpose = talk.inputPurpose;
+    if (purpose === 'chat') {
+      const history = [...talk.history, { role: 'user' as const, text }];
+      setTalk({ ...talk, phase: 'waiting', lastMessage: text, history });
+      api.talk(projectId, talk.npc.id, text, talk.history)
+        .then((r) => setTalk((t) => t && {
+          ...t, phase: 'reply', reply: r.reply, history: [...history, { role: 'npc', text: r.reply }],
+          choices: [
+            ...(r.action === 'apply_change' ? [{ key: 'apply', label: 'その内容を構成に反映する' }] : []),
+            { key: 'chat', label: '続けて相談する' }, { key: 'enter', label: `${t.npc.room}を見る` }, { key: 'close', label: 'また今度' },
+          ],
+        }))
+        .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（返事がもらえませんでした: ${e.message}）` }));
+      return;
+    }
+    if (!focus) return;
+    try {
+      if (purpose === 'scenes') {
+        const job = await api.startReviseScenesJob(focus.id, text);
+        track(job, { npcId: 'writer', kind: 'scenes', episodeId: focus.id, label: job.label });
+        sayAndClose(['承知しました。その方向で書き直します。', '直したら呼びに行きます。']);
+      } else if (purpose === 'panels') {
+        const job = await api.startPanelsJob(focus.id, text);
+        track(job, { npcId: 'artist', kind: 'panels', episodeId: focus.id, label: job.label });
+        sayAndClose(['なるほど、そこを直すんだね。', '描き直したら呼ぶよ。']);
+      }
+    } catch (e) {
+      sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる');
+    }
+  }, [talk, projectId, focus, track, sayAndClose]);
 
-  const cancelInput = useCallback(() => setTalk((t) => t && { ...t, phase: 'menu' }), []);
+  const cancelInput = useCallback(() => setTalk((t) => t && { ...t, phase: t.content ? 'deliver' : 'menu' }), []);
 
+  // ---- 移動 ----
   const stairs = useCallback((kind: 'U' | 'V') => {
     if (!projectId) { say('担当作品を決めると上の階へ行けます。受付へどうぞ。'); return; }
     const to = floor.stairs[kind];
@@ -175,7 +362,6 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   }, [projectId, floor, say]);
 
   const close = () => navigate(basePath);
-
   const goFloor = (id: string) => {
     if (!projectId && id !== '1F') { say('担当作品を決めると他の階へ行けます。'); return; }
     setTalk(null);
@@ -184,14 +370,13 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (dialogOpen) navigate(basePath);
   };
 
-  // 画面幅に合わせてマップを拡大縮小する（基準 768px）
   const stageRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
     const update = () => {
-      const avail = el.clientWidth - 40 - (el.clientWidth > 1100 ? 280 : 0);
+      const avail = el.clientWidth - 40 - (el.clientWidth > 1100 ? 300 : 0);
       setScale(Math.max(0.5, Math.min(1.5, avail / 768)));
     };
     update();
@@ -201,6 +386,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   const projectTitle = status?.project?.title ?? null;
+  const rows = useMemo(() => questRows(status, jobs), [status, jobs]);
 
   return (
     <div className="office">
@@ -213,9 +399,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="office-floors" aria-label="フロア">
           {[...FLOORS].reverse().map((f) => (
-            <button key={f.id} className={f.id === floor.id ? 'active' : ''} onClick={() => goFloor(f.id)}>
-              {f.label}
-            </button>
+            <button key={f.id} className={f.id === floor.id ? 'active' : ''} onClick={() => goFloor(f.id)}>{f.label}</button>
           ))}
         </nav>
         <div className="office-tools">
@@ -240,16 +424,33 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
               activeNpcId={current?.npc.id ?? talk?.npc.id ?? null}
               busyNpcIds={busyNpcIds}
               disabledNpcIds={disabledNpcIds}
+              reportNpcIds={reportNpcIds}
             />
           </div>
         </div>
+
         <aside className="office-side">
+          {projectId && (
+            <div className="quest">
+              <div className="quest-title"><span>進行表</span><span className="muted">担当中: {focus ? `第${focus.number}話` : '—'}</span></div>
+              {rows.length ? rows.map((r) => (
+                <div key={r.episode.id} className={`quest-row ${r.episode.id === focusId ? 'focus' : ''}`} onClick={() => setFocus(r.episode.id)}>
+                  <span className="ep">第{r.episode.number}話</span>
+                  <span className="ttl">{r.episode.title}</span>
+                  <span className="steps">
+                    {r.steps.map((s) => <span key={s.key} className={`qstep ${s.done ? 'done' : ''} ${s.active ? 'active' : ''}`}>{s.label}</span>)}
+                  </span>
+                </div>
+              )) : <div className="quest-empty">まだ話がありません。</div>}
+              <div className="quest-next">▶ {nextHint(status, focus)}</div>
+            </div>
+          )}
           <div className="office-floor-title">{floor.label}</div>
           <ul className="office-npcs">
             {floor.npcs.map((n) => (
               <li key={n.id}>
                 <button className={`npc-link ${disabledNpcIds.has(n.id) ? 'disabled' : ''}`} onClick={() => startTalk(n)}>
-                  <strong>{n.name}</strong>
+                  <strong>{n.name}{reportNpcIds.has(n.id) && <span className="report-mark"> !</span>}</strong>
                   <span>{n.hint}</span>
                   {busyNpcIds.has(n.id) && <em>作業中…</em>}
                 </button>
@@ -289,7 +490,7 @@ function findTile(floor: Floor, ch: string): { x: number; y: number } | null {
   return null;
 }
 
-/** 部屋の中身を表示する RPG 風ダイアログ。Esc または閉じるでマップへ戻る */
+/** 書類（従来ページ）を表示するダイアログ。Esc または閉じるでマップへ戻る */
 function RoomDialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

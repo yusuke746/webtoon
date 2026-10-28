@@ -7,6 +7,7 @@ import {
 import {
   generateCharacters, generateEpisodeImages, generatePanelImage, generatePanels,
   generateStructure, getProject, listCharacters, listEpisodes, listForeshadowings, listPanels,
+  reviseEpisodeScenes,
 } from './engines/story.js';
 import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
@@ -102,7 +103,63 @@ router.post('/projects/:id/generate/characters', wrap(async (req, res) => {
 }));
 
 router.post('/episodes/:id/generate/panels', wrap(async (req, res) => {
-  res.json(await generatePanels(id(req)));
+  res.json(await generatePanels(id(req), req.body?.instruction));
+}));
+
+// ---- オフィス用: 会話から頼む作業はジョブにして、NPC が「作業中」になる ----
+
+router.post('/projects/:id/jobs/structure', wrap((req, res) => {
+  const projectId = id(req);
+  const episodeCount = Number(req.body?.episodeCount ?? 1);
+  const instruction = req.body?.instruction ? String(req.body.instruction) : undefined;
+  const job = startJob(
+    { projectId, kind: 'structure', label: `続き ${episodeCount} 話分の構成`, totalSteps: 1, step: '脚本家が構成を書いています…' },
+    async (ctx) => {
+      await generateStructure(projectId, episodeCount, instruction);
+      syncFromEpisodes(projectId);
+      ctx.setResultRef('episodes');
+    },
+  );
+  res.status(202).json(job);
+}));
+
+router.post('/episodes/:id/jobs/revise-scenes', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const instruction = String(req.body?.instruction ?? '').trim();
+  if (!instruction) { res.status(400).json({ error: '指示が必要です' }); return; }
+  const job = startJob(
+    { projectId: episode.projectId, kind: 'structure', label: `第${episode.number}話のシーン構成を直す`, totalSteps: 1, step: '脚本家が書き直しています…' },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await reviseEpisodeScenes(episodeId, instruction);
+      syncFromEpisodes(episode.projectId);
+    },
+  );
+  res.status(202).json(job);
+}));
+
+router.post('/episodes/:id/jobs/panels', wrap((req, res) => {
+  const episodeId = id(req);
+  const row = db.prepare('SELECT * FROM episodes WHERE id = ?').get(episodeId);
+  if (!row) { res.status(404).json({ error: 'エピソードが見つかりません' }); return; }
+  const episode = rowToEpisode(row as any);
+  const instruction = req.body?.instruction ? String(req.body.instruction) : undefined;
+  const revising = !!instruction && listPanels(episodeId).length > 0;
+  const job = startJob(
+    {
+      projectId: episode.projectId, kind: 'panels',
+      label: revising ? `第${episode.number}話のネームを直す` : `第${episode.number}話のネーム`,
+      totalSteps: 1, step: revising ? '漫画家がネームを直しています…' : '漫画家がネームを切っています…',
+    },
+    async (ctx) => {
+      ctx.setResultRef(`episode:${episodeId}`);
+      await generatePanels(episodeId, instruction);
+    },
+  );
+  res.status(202).json(job);
 }));
 
 /** 一括作画はコマ数ぶん時間がかかるためジョブとして実行し、Job を返す */
