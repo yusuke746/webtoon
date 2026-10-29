@@ -49,7 +49,7 @@ export function StripExport({ episode, panels, rules }: { episode: Episode; pane
       {open && (
         <div className="strip-export-pop" onClick={(e) => e.stopPropagation()}>
           <div className="strip-export-title">縦長画像で書き出す</div>
-          <label>幅
+          <label><span>幅</span>
             <select value={opt.width} onChange={(e) => setOpt({ ...opt, width: Number(e.target.value) })} disabled={!!busy}>
               <option value={800}>800px（投稿サイトの標準）</option>
               <option value={690}>690px</option>
@@ -57,7 +57,7 @@ export function StripExport({ episode, panels, rules }: { episode: Episode; pane
               <option value={1600}>1600px（高解像度）</option>
             </select>
           </label>
-          <label>分割
+          <label><span>分割</span>
             <select value={opt.splitHeight} onChange={(e) => setOpt({ ...opt, splitHeight: Number(e.target.value) })} disabled={!!busy}>
               <option value={0}>しない（1 枚。長すぎれば自動で分割）</option>
               <option value={1280}>高さ 1280px ごと（Webtoon 投稿向け）</option>
@@ -65,15 +65,15 @@ export function StripExport({ episode, panels, rules }: { episode: Episode; pane
               <option value={4000}>高さ 4000px ごと</option>
             </select>
           </label>
-          <label>コマの間隔
+          <label><span>コマの間隔</span>
             <select value={opt.gap} onChange={(e) => setOpt({ ...opt, gap: Number(e.target.value) })} disabled={!!busy}>
               <option value={16}>狭い</option>
               <option value={32}>標準</option>
               <option value={64}>広い</option>
             </select>
           </label>
-          <label className="row tight"><input type="checkbox" checked={opt.title} onChange={(e) => setOpt({ ...opt, title: e.target.checked })} disabled={!!busy} /> 先頭に話のタイトルを入れる</label>
-          <label className="row tight">背景
+          <label className="check"><input type="checkbox" checked={opt.title} onChange={(e) => setOpt({ ...opt, title: e.target.checked })} disabled={!!busy} /><span>先頭に話のタイトルを入れる</span></label>
+          <label><span>背景</span>
             <input type="color" value={opt.background} onChange={(e) => setOpt({ ...opt, background: e.target.value })} disabled={!!busy} />
           </label>
           <div className="row tight" style={{ marginTop: 8 }}>
