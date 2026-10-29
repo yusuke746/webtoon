@@ -21,9 +21,36 @@ export interface StripOptions {
   background: string;
   /** 先頭に話のタイトルを入れる */
   title: boolean;
+  /** 出力形式 */
+  format: 'png' | 'jpeg';
+  /** 1 枚あたりの容量の上限（バイト。0 なら制限なし。JPEG は品質を下げて収める） */
+  maxBytes: number;
+  /** 分割したときの最後の 1 枚の最小の高さ（投稿サイトの下限に合わせて余白で埋める。0 なら埋めない） */
+  minSliceHeight: number;
+  /** 投稿先プリセット */
+  preset: 'custom' | 'line';
 }
 
-export const DEFAULT_STRIP_OPTIONS: StripOptions = { width: 800, splitHeight: 0, gap: 32, background: '#ffffff', title: true };
+export const DEFAULT_STRIP_OPTIONS: StripOptions = {
+  width: 800, splitHeight: 0, gap: 32, background: '#ffffff', title: true, format: 'png', maxBytes: 0, minSliceHeight: 0, preset: 'custom',
+};
+
+/**
+ * LINE マンガ インディーズ（縦読み）向け。
+ * 推奨 横 800px、許容 横 400〜10000px・縦 600〜10000px、JPG/PNG、1 枚 2MB 以内、最大 1000 枚。
+ * 1 枚の高さは 1200px で割り、最後の 1 枚が 600px 未満なら余白で 600px にする。容量は JPEG の品質で収める。
+ */
+export const LINE_MANGA_PRESET: Partial<StripOptions> = {
+  width: 800, splitHeight: 1200, gap: 32, background: '#ffffff', format: 'jpeg', maxBytes: 2 * 1024 * 1024, minSliceHeight: 600, preset: 'line',
+};
+export const LINE_MANGA_COVERS = {
+  /** 話の表紙 */
+  episode: { w: 284, h: 180 },
+  /** 作品表紙（縦） */
+  workPortrait: { w: 240, h: 348 },
+  /** 作品表紙（横） */
+  workLandscape: { w: 348, h: 220 },
+};
 
 /** ブラウザの canvas の実用上限（これを超える 1 枚は自動で分割） */
 const CANVAS_MAX_HEIGHT = 16000;
@@ -162,10 +189,11 @@ export async function renderStrip(episode: Episode, panels: Panel[], rules: Pane
     const h = Math.min(sliceH, height - top);
     const canvas = document.createElement('canvas');
     canvas.width = o.width;
-    canvas.height = h;
+    // 最後の 1 枚が投稿サイトの下限より短ければ、背景色で埋めて下限の高さにする
+    canvas.height = Math.max(h, o.minSliceHeight > 0 ? Math.min(o.minSliceHeight, sliceH) : 0);
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = o.background;
-    ctx.fillRect(0, 0, o.width, h);
+    ctx.fillRect(0, 0, o.width, canvas.height);
     ctx.translate(0, -top);
 
     if (o.title && top < titleH) {
@@ -204,14 +232,63 @@ export async function renderStrip(episode: Episode, panels: Panel[], rules: Pane
   return slices;
 }
 
-/** canvas を PNG としてダウンロードする */
-export async function downloadCanvases(canvases: HTMLCanvasElement[], baseName: string): Promise<void> {
+function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise((r) => canvas.toBlob(r, type, quality));
+}
+
+/**
+ * canvas を画像にする。容量の上限があれば、JPEG の品質を段階的に下げて収める
+ * （PNG は品質を下げられないので、上限を超えたら JPEG に切り替える）
+ */
+export async function encodeCanvas(canvas: HTMLCanvasElement, format: 'png' | 'jpeg', maxBytes = 0): Promise<{ blob: Blob; ext: string; quality: number | null }> {
+  if (format === 'png') {
+    const png = await toBlob(canvas, 'image/png');
+    if (!png) throw new Error('画像を作れませんでした');
+    if (!maxBytes || png.size <= maxBytes) return { blob: png, ext: 'png', quality: null };
+  }
+  let last: Blob | null = null;
+  for (const q of [0.92, 0.88, 0.84, 0.8, 0.75, 0.7, 0.62, 0.55, 0.45]) {
+    const jpg = await toBlob(canvas, 'image/jpeg', q);
+    if (!jpg) continue;
+    last = jpg;
+    if (!maxBytes || jpg.size <= maxBytes) return { blob: jpg, ext: 'jpg', quality: q };
+  }
+  if (!last) throw new Error('画像を作れませんでした');
+  return { blob: last, ext: 'jpg', quality: 0.45 };
+}
+
+export interface ExportFile { name: string; blob: Blob; width: number; height: number; quality: number | null }
+
+/** ストリップの各 canvas を書き出し用のファイルにする */
+export async function encodeStrip(canvases: HTMLCanvasElement[], baseName: string, format: 'png' | 'jpeg', maxBytes = 0): Promise<ExportFile[]> {
+  const out: ExportFile[] = [];
   for (let i = 0; i < canvases.length; i++) {
-    const blob = await new Promise<Blob | null>((r) => canvases[i].toBlob(r, 'image/png'));
-    if (!blob) continue;
+    const { blob, ext, quality } = await encodeCanvas(canvases[i], format, maxBytes);
+    out.push({ name: canvases.length > 1 ? `${baseName}_${String(i + 1).padStart(3, '0')}.${ext}` : `${baseName}.${ext}`, blob, width: canvases[i].width, height: canvases[i].height, quality });
+  }
+  return out;
+}
+
+/** 表紙用: 最初の作画済みコマを指定サイズに切り抜く（なければ null） */
+export async function renderCover(panels: Panel[], rules: PanelRules, w: number, h: number): Promise<HTMLCanvasElement | null> {
+  const first = readingOrder(panels, rules).find((p) => p.imageUrl);
+  if (!first?.imageUrl) return null;
+  const img = await loadImage(first.imageUrl);
+  if (!img) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  drawCover(ctx, img, 0, 0, w, h);
+  return canvas;
+}
+
+/** ファイルを順にダウンロードする */
+export async function downloadFiles(files: { name: string; blob: Blob }[]): Promise<void> {
+  for (const f of files) {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = canvases.length > 1 ? `${baseName}_${String(i + 1).padStart(3, '0')}.png` : `${baseName}.png`;
+    a.href = URL.createObjectURL(f.blob);
+    a.download = f.name;
     document.body.appendChild(a);
     a.click();
     a.remove();
