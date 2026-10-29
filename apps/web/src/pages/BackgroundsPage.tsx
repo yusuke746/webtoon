@@ -21,7 +21,7 @@ export function BackgroundsPage() {
 
   const blank: Background = {
     id: 0, projectId, name: '', description: '',
-    refImageUrl: null, loraUrl: null, visualPrompt: null, sourceAssetId: null, createdAt: '',
+    refImageUrl: null, loraUrl: null, visualPrompt: null, visualHandle: null, sourceAssetId: null, createdAt: '',
   };
 
   return (

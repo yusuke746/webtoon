@@ -35,7 +35,8 @@ export class ReplicateImageClient implements ImageClient {
     const refs = flattenSheets(req.referenceSheets ?? [], caps.maxRefs);
     if (caps.refMode === 'multi' && caps.refInput && refs.length && input[caps.refInput] === undefined) {
       input[caps.refInput] = await Promise.all(refs.map((r) => (r.url.startsWith('/api/images/') ? localImageToDataUri(r.url) : r.url)));
-      input.prompt = `${refs.map((r, i) => `[image ${i + 1}] = ${r.label}`).join('; ')}. Draw the characters and the place exactly as shown in these reference images. ${req.prompt}`;
+      // 参照画像の対応は自然文で書く（"[image 1] = 名前" のような表記や日本語の名前は、画像に文字として描かれやすい）
+      input.prompt = `Do not render any text, letters, numbers, logos or signs anywhere in the image. ${refs.map((r, i) => `Reference image ${i + 1} shows ${r.label}`).join('; ')}. Draw the characters and the place exactly as shown in these reference images. ${req.prompt}`;
       appliedReferenceCount = refs.length;
     }
 

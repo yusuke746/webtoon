@@ -226,7 +226,7 @@ async function stylizePhotosToCandidates(
       try {
         const result = await image.generate({
           prompt, model,
-          referenceSheets: [{ label: `${name} (location photo)`, kind: 'background', urls: [photo] }],
+          referenceSheets: [{ label: 'the location photo', kind: 'background', urls: [photo] }],
           aspectRatio: '16:9',
           extraInput: style?.model === model ? style?.extraInput : undefined,
         });

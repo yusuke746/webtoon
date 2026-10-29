@@ -24,38 +24,71 @@ export const ART_CHECK_MAX_RETRY = Number(process.env.ART_CHECK_MAX_RETRY ?? 2);
 
 // ---------- 絵の指示用の固定文 ----------
 
-/** キャラ/背景の visualPrompt を返す。無ければ Claude に作らせて保存する */
-export async function ensureVisualPrompt(kind: 'character' | 'background', id: number): Promise<string> {
+export interface VisualIdentity { prompt: string; handle: string }
+
+/**
+ * キャラ/背景の固定文（visualPrompt）と英語の呼び名（visualHandle）を返す。無ければ Claude に作らせて保存する。
+ * 呼び名は画像プロンプトの中で日本語の名前の代わりに使う（名前をそのまま渡すと、画像に文字として描かれることがある）。
+ */
+export async function ensureVisual(kind: 'character' | 'background', id: number): Promise<VisualIdentity> {
   const table = kind === 'character' ? 'characters' : 'backgrounds';
   const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as any;
-  if (!row) return '';
-  if (row.visual_prompt) return row.visual_prompt as string;
+  if (!row) return { prompt: '', handle: '' };
   const name = row.name as string;
+  if (row.visual_prompt && row.visual_handle) return { prompt: row.visual_prompt as string, handle: row.visual_handle as string };
   const description = kind === 'character' ? `${row.appearance ?? ''}` : `${row.description ?? ''}`;
   try {
     const text = await getLLMClient().complete({ task: 'visual_prompt', prompt: visualPromptPrompt(kind, name, description) });
-    const out = extractJson<{ prompt?: string }>(text);
-    const vp = (out.prompt ?? '').trim();
+    const out = extractJson<{ prompt?: string; handle?: string }>(text);
+    const vp = (row.visual_prompt as string | null) || (out.prompt ?? '').trim();
+    const handle = sanitizeHandle(out.handle ?? '') || fallbackHandle(kind, vp);
     if (vp) {
-      db.prepare(`UPDATE ${table} SET visual_prompt = ? WHERE id = ?`).run(vp, id);
-      return vp;
+      db.prepare(`UPDATE ${table} SET visual_prompt = ?, visual_handle = ? WHERE id = ?`).run(vp, handle, id);
+      return { prompt: vp, handle };
     }
   } catch (e) {
     console.warn(`[art] ${kind} ${name} の固定文の生成に失敗:`, (e as Error).message);
   }
-  return '';
+  return { prompt: (row.visual_prompt as string | null) ?? '', handle: (row.visual_handle as string | null) ?? fallbackHandle(kind, '') };
 }
 
-/** コマのプロンプト先頭に置く「登場人物・舞台」ブロック */
+export async function ensureVisualPrompt(kind: 'character' | 'background', id: number): Promise<string> {
+  return (await ensureVisual(kind, id)).prompt;
+}
+
+/** 呼び名は英語だけにする（日本語が混ざっていたら捨てる） */
+function sanitizeHandle(h: string): string {
+  const t = h.trim().replace(/^["'`]+|["'`]+$/g, '');
+  if (!t || /[^\x20-\x7e]/.test(t) || t.length > 60) return '';
+  return t;
+}
+
+/** 呼び名が作れなかったときの代替（固定文の先頭の語から） */
+function fallbackHandle(kind: 'character' | 'background', vp: string): string {
+  const head = vp.split(',').slice(0, 2).join(',').trim();
+  if (head && /^[\x20-\x7e]+$/.test(head)) return kind === 'character' ? `the person (${head})` : `the place (${head})`;
+  return kind === 'character' ? 'the character' : 'the setting';
+}
+
+/** 画像プロンプトの中の日本語の名前を英語の呼び名に置き換える（長い名前から順に） */
+export function replaceNamesWithHandles(text: string, pairs: { name: string; handle: string }[]): string {
+  let out = text;
+  for (const { name, handle } of [...pairs].filter((p) => p.name && p.handle).sort((a, b) => b.name.length - a.name.length)) {
+    out = out.split(name).join(handle);
+  }
+  return out;
+}
+
+/** コマのプロンプト先頭に置く「登場人物・舞台」ブロック（英語の呼び名で） */
 export async function subjectBlock(characters: Character[], background: Background | null): Promise<string> {
   const parts: string[] = [];
   for (const c of characters) {
-    const vp = await ensureVisualPrompt('character', c.id);
-    if (vp) parts.push(`${c.name}: ${vp}`);
+    const v = await ensureVisual('character', c.id);
+    if (v.prompt) parts.push(`${v.handle}: ${v.prompt}`);
   }
   if (background) {
-    const vp = await ensureVisualPrompt('background', background.id);
-    if (vp) parts.push(`setting: ${vp}`);
+    const v = await ensureVisual('background', background.id);
+    if (v.prompt) parts.push(`setting (${v.handle}): ${v.prompt}`);
   }
   return parts.join('. ');
 }

@@ -4,7 +4,10 @@ import type {
 
 /** Claude へ渡すプロンプトのテンプレート集。すべて JSON 出力を強制する */
 
-const JSON_ONLY = '出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。';
+const JSON_ONLY_RAW = '出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。';
+/** 物語の文章を返すプロンプト用: JSON のみ + 日本語で書く */
+const JSON_ONLY = `文章（タイトル・要約・シーン・セリフ・説明・理由・返答）はすべて日本語で書くこと。英語にするのは画像生成用の項目（imagePrompt / fixPrompt）だけ。
+${JSON_ONLY_RAW}`;
 
 /** 担当編集からの指示（会話で伝えた要望）。最優先で反映させる */
 function instructionSection(instruction?: string): string {
@@ -403,7 +406,7 @@ ${stylePrompt || '（指定なし。日本の漫画・白黒の線画を基本�
 ## 出力JSON
 {"prompt": "英語のプロンプト"}
 
-${JSON_ONLY}`;
+${JSON_ONLY_RAW}`;
 }
 
 export function projectContextSummary(
@@ -632,9 +635,10 @@ ${description || '（詳細な設定なし。名前から妥当に補完する�
 - 英語のカンマ区切りタグ列のみ。日本語・説明文を混ぜない
 - 60語以内
 - 文字・ロゴ・吹き出しに関する語を入れない
+- handle は、画像プロンプトの中でこの対象を指すための «英語の短い呼び名»（固有名詞・日本語を使わず外見で。例: "the black-haired schoolboy", "the silver-haired girl in a white dress", "the old shopping arcade"）。日本語の名前を画像に文字として描かれないようにするためのもの
 
 ## 出力JSON
-{"prompt": "英語の固定文"}
+{"prompt": "英語の固定文", "handle": "英語の短い呼び名"}
 出力は指定した JSON のみとし、前置きや説明文は一切書かないこと。`;
 }
 
