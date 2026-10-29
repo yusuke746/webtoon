@@ -200,7 +200,7 @@ export const api = {
 
   // オフィスの美術（フロアの背景絵）
   getOfficeArt: () => get<{ adopted: Record<string, string>; candidates: OfficeArt[] }>('/office/art'),
-  startOfficeArtJob: (projectId: number, floors: { floorId: string; sourceUrl: string }[], hint?: string) =>
+  startOfficeArtJob: (projectId: number, floors: { floorId: string; sourceUrl: string; description?: string }[], hint?: string) =>
     post<Job>(`/projects/${projectId}/office/art/jobs`, { floors, hint }),
   adoptOfficeArt: (id: number) => post<OfficeArt>(`/office/art/${id}/adopt`),
   revertOfficeArt: (floorId: string) => del<{ ok: true }>(`/office/art/floor/${floorId}`),

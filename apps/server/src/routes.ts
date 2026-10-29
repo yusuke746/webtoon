@@ -747,7 +747,7 @@ router.get('/office/art', wrap((_req, res) => {
 
 /** 下絵（data URL でアップロード済みの /api/images/... か data URL）を渡して描き直す */
 router.post('/projects/:id/office/art/jobs', wrap((req, res) => {
-  const floors = Array.isArray(req.body?.floors) ? req.body.floors.map((f: any) => ({ floorId: String(f.floorId), sourceUrl: String(f.sourceUrl) })) : [];
+  const floors = Array.isArray(req.body?.floors) ? req.body.floors.map((f: any) => ({ floorId: String(f.floorId), sourceUrl: String(f.sourceUrl), description: typeof f.description === 'string' ? f.description : '' })) : [];
   res.status(202).json(startOfficeArtJob(id(req), floors, typeof req.body?.hint === 'string' ? req.body.hint : ''));
 }));
 

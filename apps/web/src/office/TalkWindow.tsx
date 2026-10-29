@@ -111,7 +111,7 @@ export function TalkWindow({ talk, onAdvance, onChoose, onSend, onCancelInput }:
         )}
         {talk.phase === 'input' && (
           <div className="talk-input" onClick={(e) => e.stopPropagation()}>
-            <div className="muted">{talk.inputPurpose === 'chat' ? '要望・質問を書いてください' : talk.inputPurpose === 'topic' ? '議題を書いてください' : '直してほしい点を書いてください'}（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
+            <div className="muted">{talk.inputPurpose === 'chat' ? '要望・質問を書いてください' : talk.inputPurpose === 'topic' ? '議題を書いてください' : talk.inputPurpose === 'office_art' ? '絵への注文を書いてください' : '直してほしい点を書いてください'}（Enter で送信 / Shift+Enter で改行 / Esc で戻る）</div>
             <textarea ref={inputRef} value={input} rows={3}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}

@@ -112,7 +112,9 @@ API: `POST /api/uploads {dataUrl,name}`, `POST /api/backgrounds/:id/photos {urls
 - **オフィスの美術を AI で描き直す**: 手打ちのタイルでは絵の密度に限界があるので、3F の画材担当に「このフロアの美術を描き直してもらう」
   （または全フロア）と頼むと、いまのタイル配置を下絵にして画像生成モデル（`OFFICE_ART_MODEL`、既定は flux-kontext-pro）が
   「配置を保ったまま高品質な 16bit 風」に描き直す。下絵と並べて見て採用すると、そのフロアの背景として表示される（歩ける場所・机・階段の当たり判定は下絵のまま）。
-  「元のタイル絵に戻す」でいつでも戻せる。人物のドット絵は従来のまま（背景の上に重ねる）
+  「元のタイル絵に戻す」でいつでも戻せる。人物のドット絵は従来のまま（背景の上に重ねる）。
+  下絵には部屋の用途（`floors.ts` の `artDescription`）と「何がどこにあるか」（タイル配置から自動で文にする。例: 3 drafting tables, 2 at the top-right）を添える。
+  「注文をつけて描き直してもらう」で「夜の雰囲気で」などの要望も渡せる
 - 実装は `apps/web/src/office/`（`art/` ドット絵 / `sprites.ts` 描画 / `floors.ts` フロア定義 / `OfficeMap.tsx` / `TalkWindow.tsx` 会話 / `dialogue.ts` 定型文 / `OfficeLayout.tsx`）
 
 ## 制作フロー

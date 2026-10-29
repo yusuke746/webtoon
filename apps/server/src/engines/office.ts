@@ -33,11 +33,12 @@ export function adoptedOfficeArt(): Record<string, string> {
   return out;
 }
 
-export async function generateOfficeArt(floorId: string, sourceUrl: string, hint = ''): Promise<OfficeArt> {
+export async function generateOfficeArt(floorId: string, sourceUrl: string, hint = '', description = ''): Promise<OfficeArt> {
   const model = OFFICE_ART_MODEL;
   const caps = modelCaps(model);
   if (caps.refMode === 'none') throw new Error(`モデル ${model} は参照画像を受け取れません。OFFICE_ART_MODEL に flux-kontext-pro や google/nano-banana を指定してください`);
-  const prompt = [OFFICE_ART_PROMPT, hint.trim()].filter(Boolean).join(' ');
+  // 部屋の用途と「何がどこにあるか」の文を添える（モデルは下絵の記号の意味を知らない）。要望があれば最後に
+  const prompt = [description.trim() ? `Room: ${description.trim()}` : '', OFFICE_ART_PROMPT, hint.trim() ? `Additional request: ${hint.trim()}` : ''].filter(Boolean).join(' ');
   const result = await getImageClient().generate({
     prompt,
     model,
@@ -51,7 +52,7 @@ export async function generateOfficeArt(floorId: string, sourceUrl: string, hint
 }
 
 /** 複数フロアをまとめて描き直すジョブ */
-export function startOfficeArtJob(projectId: number | null, floors: { floorId: string; sourceUrl: string }[], hint = ''): Job {
+export function startOfficeArtJob(projectId: number | null, floors: { floorId: string; sourceUrl: string; description?: string }[], hint = ''): Job {
   if (!floors.length) throw new Error('描き直すフロアがありません');
   return startJob(
     {
@@ -65,7 +66,7 @@ export function startOfficeArtJob(projectId: number | null, floors: { floorId: s
       ctx.setResultRef('office:art');
       for (const f of floors) {
         ctx.setStep(`${f.floorId} を描いています…`);
-        await generateOfficeArt(f.floorId, f.sourceUrl, hint);
+        await generateOfficeArt(f.floorId, f.sourceUrl, hint, f.description ?? '');
         ctx.advance(`${f.floorId} ができました`);
       }
     },

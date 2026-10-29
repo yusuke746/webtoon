@@ -289,6 +289,7 @@ export function planTalk(
       const choices: Choice[] = [
         { key: 'office:art:this', label: 'このフロアの美術を描き直してもらう（AI で高品質に）' },
         { key: 'office:art:all', label: '全フロアの美術を描き直してもらう' },
+        { key: 'office:art:hint', label: '注文をつけて、このフロアを描き直してもらう' },
       ];
       if (status?.officeArt?.candidates.some((a) => !a.adopted)) choices.push({ key: 'office:art:show', label: '描き直した絵の候補を見せて' });
       if (status?.officeArt?.adopted[status.floorId ?? '']) choices.push({ key: 'office:art:revert', label: 'このフロアを元のタイル絵に戻す' });
@@ -335,6 +336,7 @@ export function inputHintFor(purpose: string, npc: Npc): string {
     case 'panels': return '例: 見せ場のコマをもっと大きく / 1ページ目はテンポよく小ゴマで / セリフを短く';
     case 'structure': return '例: 次の話はライバルの初登場回にして / 祖母の手がかりを1つ出す';
     case 'topic': return '例: 第2話の引きは十分か? / ライバルは何話で登場させるべきか?';
+    case 'office_art': return '例: 夜の雰囲気で窓の外を暗く / もっと散らかった作業部屋に / 和風の内装で';
     default:
       switch (npc.id) {
         case 'chief': return '例: 2話にライバルの初登場シーンを入れたい / ペンダントの回収を3話に延ばして';

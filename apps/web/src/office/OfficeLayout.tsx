@@ -11,7 +11,7 @@ import {
   type Choice, type Delivery, type Requested,
 } from './workflow';
 import { DesignAltView, DesignView, EpisodesView, LocationsView, OfficeArtView, PagesView, PhotosView, ScenesView } from './Deliverables';
-import { renderFloorDataUrl } from './renderFloor';
+import { describeFloor, renderFloorDataUrl } from './renderFloor';
 import { MeetingScene, type MeetingBubble } from './MeetingScene';
 
 /**
@@ -271,6 +271,26 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildContent]);
 
+  /** フロアの下絵と説明文を作ってアップロードし、描き直しのジョブを頼む */
+  const requestOfficeArt = useCallback(async (targets: Floor[], hint = '') => {
+    if (!projectId) return;
+    setTalk((t) => t && { ...t, phase: 'waiting' });
+    try {
+      const floors: { floorId: string; sourceUrl: string; description: string }[] = [];
+      for (const f of targets) {
+        const dataUrl = await renderFloorDataUrl(f);
+        const { url } = await api.uploadDataUrl(dataUrl, `floor-${f.id.toLowerCase()}`);
+        floors.push({ floorId: f.id, sourceUrl: url, description: describeFloor(f) });
+      }
+      const job = await api.startOfficeArtJob(projectId, floors, hint);
+      track(job, { npcId: 'designer', kind: 'office_art', floorIds: floors.map((f) => f.floorId), label: job.label });
+      sayAndClose([
+        'わかりました。いまの配置を下絵にして、部屋の用途と家具の位置を文で添えて、高品質な 16bit 風に描き直します。',
+        hint ? `「${hint}」も伝えておきます。できたら呼びに行きます。` : '机や階段の位置はそのままなので、歩ける場所は変わりません。できたら呼びに行きます。',
+      ]);
+    } catch (e) { sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる'); }
+  }, [projectId, track, sayAndClose]);
+
   const choose = useCallback(async (key: string) => {
     if (!talk) return;
     const npc = talk.npc;
@@ -404,21 +424,9 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
+    if (key === 'office:art:hint') { openInput('office_art'); return; }
     if (key === 'office:art:this' || key === 'office:art:all') {
-      if (!projectId) return;
-      const targets = key === 'office:art:all' ? FLOORS : [floor];
-      setTalk((t) => t && { ...t, phase: 'waiting' });
-      try {
-        const floors: { floorId: string; sourceUrl: string }[] = [];
-        for (const f of targets) {
-          const dataUrl = await renderFloorDataUrl(f);
-          const { url } = await api.uploadDataUrl(dataUrl, `floor-${f.id.toLowerCase()}`);
-          floors.push({ floorId: f.id, sourceUrl: url });
-        }
-        const job = await api.startOfficeArtJob(projectId, floors);
-        track(job, { npcId: 'designer', kind: 'office_art', floorIds: floors.map((f) => f.floorId), label: job.label });
-        sayAndClose(['わかりました。いまの配置を下絵にして、高品質な 16bit 風に描き直します。', '机や階段の位置はそのままなので、歩ける場所は変わりません。できたら呼びに行きます。']);
-      } catch (e) { fail(e as Error); }
+      await requestOfficeArt(key === 'office:art:all' ? FLOORS : [floor]);
       return;
     }
     if (key === 'office:art:show') {
@@ -543,7 +551,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       setTalk({ ...talk, phase: 'menu', content: undefined, reply: `第${ep.number}話「${ep.title}」を担当します。`, choices: plan.choices });
       return;
     }
-  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus, openMeeting, floor]);
+  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus, openMeeting, floor, requestOfficeArt]);
 
   const send = useCallback(async (text: string) => {
     if (!talk || !projectId) return;
@@ -560,6 +568,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
           ],
         }))
         .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（返事がもらえませんでした: ${e.message}）` }));
+      return;
+    }
+    if (purpose === 'office_art') {
+      await requestOfficeArt([floor], text);
       return;
     }
     if (purpose === 'topic') {
@@ -587,7 +599,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     } catch (e) {
       sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる');
     }
-  }, [talk, projectId, focus, track, sayAndClose, loadStatus, openMeeting]);
+  }, [talk, projectId, focus, track, sayAndClose, loadStatus, openMeeting, requestOfficeArt, floor]);
 
   const cancelInput = useCallback(() => setTalk((t) => t && { ...t, phase: t.content ? 'deliver' : 'menu' }), []);
 
