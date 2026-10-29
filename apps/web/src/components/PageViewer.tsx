@@ -80,7 +80,7 @@ const POSITIONS: BubblePosition[] = [
 ];
 
 /** position 未指定のセリフに、読み方向に沿って空いているコーナーを割り当てる */
-function resolvePositions(dialogues: Dialogue[], rules: PanelRules): BubblePosition[] {
+export function resolvePositions(dialogues: Dialogue[], rules: PanelRules): BubblePosition[] {
   // 日本式(右→左)は右上→左上→…、左→右はその逆の順で埋める
   const fillOrder: BubblePosition[] =
     rules.readingDirection === 'ltr'
