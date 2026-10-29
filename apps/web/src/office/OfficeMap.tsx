@@ -23,6 +23,8 @@ interface Props {
   reportNpcIds: Set<string>;
   /** 会議などで頭上に出す吹き出し（NPC id → 文言） */
   bubbles?: Record<string, { text: string; kind: 'say' | 'think' }>;
+  /** 画像生成で描き直したフロアの絵（あればタイルの代わりに背景に敷く） */
+  artUrl?: string | null;
 }
 
 const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -32,7 +34,7 @@ const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
  * 移動は 矢印/WASD、会話は Enter/Space/E。クリックでも歩いて話しかけられる。
  */
 export function OfficeMap({
-  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds, bubbles,
+  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds, bubbles, artUrl,
 }: Props) {
   const rows = floor.map.length;
   const cols = floor.map[0].length;
@@ -182,7 +184,8 @@ export function OfficeMap({
   const actorStyle = (x: number, y: number) => ({ left: x * PX + (PX - AW) / 2, top: y * PX + PX - AH + 2 });
 
   return (
-    <div className="office-map" style={{ width: cols * PX, height: rows * PX }} role="application" aria-label={`${floor.label}のマップ`}>
+    <div className={`office-map ${artUrl ? 'has-art' : ''}`} style={{ width: cols * PX, height: rows * PX }} role="application" aria-label={`${floor.label}のマップ`}>
+      {artUrl && <img className="office-art" src={artUrl} alt="" draggable={false} />}
       {floor.map.map((row, y) =>
         row.split('').map((ch, x) => {
           // 窓の下の家具は光の床の上に置く
@@ -191,7 +194,7 @@ export function OfficeMap({
             <div
               key={`${x},${y}`}
               className={`tile ${walkable(ch) ? 'walkable' : ''}`}
-              style={{ left: x * PX, top: y * PX, width: PX, height: PX, backgroundImage: `url(${tileUrl(ch, under)})` }}
+              style={{ left: x * PX, top: y * PX, width: PX, height: PX, backgroundImage: artUrl ? undefined : `url(${tileUrl(ch, under)})` }}
               onClick={() => clickTile(x, y)}
             />
           );

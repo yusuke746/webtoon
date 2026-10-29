@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
-  Foreshadowing, Job, LoraTraining, Panel, Project, RefImage, Worldview,
+  Foreshadowing, Job, LoraTraining, OfficeArt, Panel, Project, RefImage, Worldview,
 } from '@manga/shared';
 import { DEFAULT_PANEL_RULES, DEFAULT_STORY_TEMPLATE } from '@manga/shared';
 
@@ -127,6 +127,16 @@ CREATE TABLE IF NOT EXISTS backgrounds (
   ref_image_url TEXT,
   lora_url TEXT,
   source_asset_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS office_art (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  floor_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  source_url TEXT,
+  prompt TEXT NOT NULL DEFAULT '',
+  adopted INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -341,6 +351,10 @@ export function rowToRefImage(r: Row): RefImage {
     role: r.role === 'view' ? 'view' : r.role === 'photo' ? 'photo' : 'candidate',
     createdAt: r.created_at,
   };
+}
+
+export function rowToOfficeArt(r: Row): OfficeArt {
+  return { id: r.id, floorId: r.floor_id, url: r.url, sourceUrl: r.source_url ?? null, prompt: r.prompt ?? '', adopted: !!r.adopted, createdAt: r.created_at };
 }
 
 export function rowToJob(r: Row): Job {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DesignProposal, Episode, PanelRules, RefImage } from '@manga/shared';
+import type { DesignProposal, Episode, OfficeArt, PanelRules, RefImage } from '@manga/shared';
 import { api } from '../api';
 import { FallbackImage } from '../components/PageViewer';
 import type { EpisodeWithPanels } from '../api';
@@ -196,6 +196,30 @@ export function PhotosView({ backgrounds, onChanged }: {
           {photos.map((p) => <FallbackImage key={p.id} src={p.url} alt={`${bg?.name ?? ''} の写真`} />)}
         </div>
       ) : <div className="muted">{bg ? `「${bg.name}」の写真はまだありません。` : ''}</div>}
+    </div>
+  );
+}
+
+/** オフィスの美術の候補（下絵と描き直した絵を並べる） */
+export function OfficeArtView({ candidates, adopted }: { candidates: OfficeArt[]; adopted: Record<string, string> }) {
+  const pending = candidates.filter((a) => !a.adopted);
+  const byFloor = new Map<string, OfficeArt[]>();
+  for (const a of pending) { if (!byFloor.has(a.floorId)) byFloor.set(a.floorId, []); byFloor.get(a.floorId)!.push(a); }
+  if (!pending.length) return <div className="muted">描き直した絵の候補はありません。</div>;
+  return (
+    <div>
+      <h4>描き直したフロアの絵（採用すると、そのフロアの背景になります）</h4>
+      {[...byFloor.entries()].map(([floorId, list]) => (
+        <div key={floorId} className="office-art-group">
+          <strong>{floorId}</strong>{adopted[floorId] && <span className="muted" style={{ marginLeft: 8 }}>（いまは別の絵を採用中）</span>}
+          <div className="office-art-row">
+            {list[0].sourceUrl && <figure><FallbackImage src={list[0].sourceUrl} alt="下絵" /><figcaption>いまの配置（下絵）</figcaption></figure>}
+            {list.map((a, i) => (
+              <figure key={a.id}><FallbackImage src={a.url} alt={`${floorId} 候補${i + 1}`} /><figcaption>候補{i + 1}</figcaption></figure>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

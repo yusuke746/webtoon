@@ -13,11 +13,13 @@ export interface Choice { key: string; label: string }
 export interface Requested {
   jobId: number;
   npcId: string;
-  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations' | 'discussion';
+  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations' | 'discussion' | 'office_art';
   /** design のとき: キャラか背景か */
   designKind?: DesignKind;
   /** discussion のとき: 会議の id */
   discussionId?: number;
+  /** office_art のとき: 描き直したフロア */
+  floorIds?: string[];
   episodeId?: number;
   label: string;
   /** 依頼時点の話数（構成依頼で新しい話を見分けるため） */
@@ -192,6 +194,12 @@ export function planTalk(
           deliver: delivery,
         };
       }
+      case 'office_art':
+        return {
+          lines: ['オフィスの絵、描き上がりました。', 'いまの絵と並べて見てください。気に入ったら採用で。'],
+          choices: [{ key: 'office:art:show', label: '見せて' }, close],
+          deliver: delivery,
+        };
       case 'discussion':
         return {
           lines: ['会議がまとまりました。', '結論を聞きますか。それとも最初から見ますか。'],
@@ -277,6 +285,16 @@ export function planTalk(
         : [];
       return { lines: baseLines, choices: [...choices, chat, enter('ダッシュボードを見る'), close] };
     }
+    case 'designer': {
+      const choices: Choice[] = [
+        { key: 'office:art:this', label: 'このフロアの美術を描き直してもらう（AI で高品質に）' },
+        { key: 'office:art:all', label: '全フロアの美術を描き直してもらう' },
+        { key: 'office:art:hint', label: '注文をつけて、このフロアを描き直してもらう' },
+      ];
+      if (status?.officeArt?.candidates.some((a) => !a.adopted)) choices.push({ key: 'office:art:show', label: '描き直した絵の候補を見せて' });
+      if (status?.officeArt?.adopted[status.floorId ?? '']) choices.push({ key: 'office:art:revert', label: 'このフロアを元のタイル絵に戻す' });
+      return { lines: baseLines, choices: [...choices, chat, enter('画風の設定を見る'), close] };
+    }
     case 'foreshadow': {
       const choices: Choice[] = eps.length ? [{ key: 'propose:review', label: '伏線の回収案を聞く' }] : [];
       return { lines: baseLines, choices: [...choices, chat, enter('伏線ボードを見る'), close] };
@@ -318,6 +336,7 @@ export function inputHintFor(purpose: string, npc: Npc): string {
     case 'panels': return '例: 見せ場のコマをもっと大きく / 1ページ目はテンポよく小ゴマで / セリフを短く';
     case 'structure': return '例: 次の話はライバルの初登場回にして / 祖母の手がかりを1つ出す';
     case 'topic': return '例: 第2話の引きは十分か? / ライバルは何話で登場させるべきか?';
+    case 'office_art': return '例: 夜の雰囲気で窓の外を暗く / もっと散らかった作業部屋に / 和風の内装で';
     default:
       switch (npc.id) {
         case 'chief': return '例: 2話にライバルの初登場シーンを入れたい / ペンダントの回収を3話に延ばして';

@@ -1,6 +1,6 @@
 import type {
   ArchiveInfo, DesignKind, DesignProposal, ImageModelCaps,
-  ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode,
+  ArtStyle, Background, Character, Discussion, DiscussionMessage, Episode, OfficeArt,
   Foreshadowing, ForeshadowWarning, Job, LoraTargetKind, LoraTraining,
   Panel, Project, RefImage, RefImageKind, Worldview,
 } from '@manga/shared';
@@ -196,4 +196,13 @@ export const api = {
     return post<{ url: string }>('/uploads', { dataUrl, name: file.name.replace(/\.[^.]+$/, '') });
   },
   attachBackgroundPhotos: (backgroundId: number, urls: string[]) => post<RefImage[]>(`/backgrounds/${backgroundId}/photos`, { urls }),
+  uploadDataUrl: (dataUrl: string, name: string) => post<{ url: string }>('/uploads', { dataUrl, name }),
+
+  // オフィスの美術（フロアの背景絵）
+  getOfficeArt: () => get<{ adopted: Record<string, string>; candidates: OfficeArt[] }>('/office/art'),
+  startOfficeArtJob: (projectId: number, floors: { floorId: string; sourceUrl: string; description?: string }[], hint?: string) =>
+    post<Job>(`/projects/${projectId}/office/art/jobs`, { floors, hint }),
+  adoptOfficeArt: (id: number) => post<OfficeArt>(`/office/art/${id}/adopt`),
+  revertOfficeArt: (floorId: string) => del<{ ok: true }>(`/office/art/floor/${floorId}`),
+  deleteOfficeArt: (id: number) => del<{ ok: true }>(`/office/art/${id}`),
 };

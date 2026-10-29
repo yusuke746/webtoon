@@ -963,3 +963,11 @@ td.nowrap, th.nowrap { white-space: nowrap; }
 .strip-export-msg.error { color: #ff8a8a; }
 .strip-export-note { margin-top: 8px; font-size: 11px; color: #9a93ad; }
 .strip-export-spec { margin: 2px 0 8px; font-size: 11px; color: #cfc9dc; background: #141120; border: 1px solid #3a3350; border-radius: 6px; padding: 6px 8px; line-height: 1.5; }
+
+/* オフィスの美術（画像生成で描き直したフロアの絵） */
+.office-map .office-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; image-rendering: auto; pointer-events: none; z-index: 0; }
+.office-map.has-art .tile { background-image: none; }
+.office-art-group { margin-top: 8px; }
+.office-art-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.office-art-row figure { margin: 0; text-align: center; font-size: 11px; color: var(--sub); }
+.office-art-row img, .office-art-row .img-fallback { width: 300px; height: 188px; object-fit: cover; border: 2px solid var(--line); border-radius: 6px; display: block; }

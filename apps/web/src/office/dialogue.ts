@@ -1,4 +1,4 @@
-import type { ArchiveInfo, Character, DesignProposal, Discussion, Episode, ForeshadowWarning, ImageModelCaps, Project } from '@manga/shared';
+import type { ArchiveInfo, Character, DesignProposal, Discussion, Episode, ForeshadowWarning, ImageModelCaps, OfficeArt, Project } from '@manga/shared';
 import type { Npc } from './floors';
 
 /**
@@ -21,6 +21,10 @@ export interface OfficeStatus {
   designBg: DesignProposal[] | null;
   /** 適用中の画風のモデルが設定画をどう受け取るか */
   imageCaps: ImageModelCaps | null;
+  /** オフィスの美術（フロアの背景絵）。採用中と候補 */
+  officeArt?: { adopted: Record<string, string>; candidates: OfficeArt[] } | null;
+  /** いま居るフロア */
+  floorId?: string;
 }
 
 const EP_STATUS: Record<string, string> = {
@@ -116,6 +120,7 @@ export function npcLines(npc: Npc, s: OfficeStatus | null): string[] {
       else if (c?.refMode === 'single') lines.push(`モデルは ${c.label}。参照画像は1枚しか渡せないので、主役の顔だけ守れます。背景まで揃えるなら nano-banana などに替えてください。`);
       else if (c) lines.push(`注意: モデル ${c.label} は設定画を受け取れません。固定文と作画チェックだけでは顔がブレます。画風のモデルを google/nano-banana などに替えてください。`);
       lines.push('コマ割りのルールや構成テンプレートもここで変えられます。');
+      lines.push(s.officeArt?.adopted[s.floorId ?? ''] ? 'このフロアの絵は私が描き直したものです。気に入らなければ元にも戻せます。' : 'オフィスの絵が物足りなければ、配置はそのままに私が描き直します。');
       return lines;
     }
 

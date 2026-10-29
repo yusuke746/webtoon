@@ -42,6 +42,8 @@ export interface Npc {
 export interface Floor {
   id: string;
   label: string;
+  /** 画像生成で描き直すときに添える部屋の用途・雰囲気（英語。モデルに渡す） */
+  artDescription?: string;
   map: string[];
   npcs: Npc[];
   stairs: Partial<Record<'U' | 'V', string>>;
@@ -52,6 +54,7 @@ export const FLOORS: Floor[] = [
   {
     id: 'B1',
     label: 'B1 書庫',
+    artDescription: "Basement archive of a manga publisher: a quiet records room with tall bookshelves full of bound back issues and manuscripts, a reading table, filing cabinets, a cork board pinned with notes, dim warm lamp light, stone and wood textures.",
     spawn: { x: 2, y: 7 },
     stairs: { U: '1F' },
     map: [
@@ -88,6 +91,7 @@ export const FLOORS: Floor[] = [
   {
     id: '1F',
     label: '1F 編集部',
+    artDescription: "Ground-floor editorial office lobby of a manga publisher: a reception counter near the entrance, the editor-in-chief's big desk with a monitor and stacks of manuscripts, potted plants, waiting chairs, bright daylight from windows.",
     spawn: { x: 8, y: 7 },
     stairs: { U: '2F', V: 'B1' },
     map: [
@@ -119,6 +123,7 @@ export const FLOORS: Floor[] = [
   {
     id: '2F',
     label: '2F 脚本室・資料室',
+    artDescription: "Second floor of a manga publisher with a writers' room and a reference library: desks with lamps and papers for the scriptwriter, walls lined with reference bookshelves, a cabinet of character and location files, a potted plant.",
     spawn: { x: 2, y: 7 },
     stairs: { U: '3F', V: '1F' },
     map: [
@@ -157,6 +162,7 @@ export const FLOORS: Floor[] = [
   {
     id: '3F',
     label: '3F 作画室',
+    artDescription: "Third floor art studio of a manga publisher: drafting tables and desks with monitors for the manga artist, shelves of art supplies and pens, a whiteboard, a filing cabinet, natural light from windows, ink and paper on the desks.",
     spawn: { x: 2, y: 7 },
     stairs: { U: '4F', V: '2F' },
     map: [
@@ -181,13 +187,14 @@ export const FLOORS: Floor[] = [
       {
         id: 'designer', name: '画材担当', title: '画風・カスタマイズ', x: 2, y: 2, room: '画風・カスタマイズ',
         look: { hair: '#a04a8a', cloth: '#f0c050', hairStyle: 'ponytail' },
-        route: '/projects/{p}/settings', hint: '画風・コマ割りルール・構成テンプレート', canChat: true,
+        route: '/projects/{p}/settings', hint: '画風・コマ割りルール・構成テンプレート・オフィスの美術', canChat: true, jobKinds: ['office_art'],
       },
     ],
   },
   {
     id: '4F',
     label: '4F 会議室',
+    artDescription: "Top-floor meeting room of a manga publisher: a long conference table on a carpet in the middle, a whiteboard at the wall, potted plants in the corners, windows along the top wall, bright and formal atmosphere.",
     spawn: { x: 2, y: 7 },
     stairs: { V: '3F' },
     map: [

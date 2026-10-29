@@ -13,6 +13,7 @@ import { detectWarnings, syncFromEpisodes } from './engines/foreshadow.js';
 import { getDiscussion, intervene, listMessages, setDecision, startDiscussion } from './engines/discussion.js';
 import { applyChange } from './engines/changes.js';
 import { proposeFromNpc, talkToNpc } from './engines/talk.js';
+import { adoptOfficeArt, adoptedOfficeArt, deleteOfficeArt, listOfficeArt, revertOfficeArt, startOfficeArtJob } from './engines/office.js';
 import { adoptDesign, listDesignProposals, startDesignJob, startLocationsJob } from './engines/design.js';
 import {
   getArchiveInfo, readArchiveFile, recordDecision, summarizeEpisode, syncArchive,
@@ -736,4 +737,30 @@ router.post('/backgrounds/:id/photos', wrap((req, res) => {
   const urls = Array.isArray(req.body?.urls) ? req.body.urls.map(String) : [];
   if (!urls.length) { res.status(400).json({ error: 'urls が必要です' }); return; }
   res.status(201).json(attachPhotos(id(req), urls));
+}));
+
+// ============ オフィスの美術（フロアの背景絵） ============
+
+router.get('/office/art', wrap((_req, res) => {
+  res.json({ adopted: adoptedOfficeArt(), candidates: listOfficeArt() });
+}));
+
+/** 下絵（data URL でアップロード済みの /api/images/... か data URL）を渡して描き直す */
+router.post('/projects/:id/office/art/jobs', wrap((req, res) => {
+  const floors = Array.isArray(req.body?.floors) ? req.body.floors.map((f: any) => ({ floorId: String(f.floorId), sourceUrl: String(f.sourceUrl), description: typeof f.description === 'string' ? f.description : '' })) : [];
+  res.status(202).json(startOfficeArtJob(id(req), floors, typeof req.body?.hint === 'string' ? req.body.hint : ''));
+}));
+
+router.post('/office/art/:id/adopt', wrap((req, res) => {
+  res.json(adoptOfficeArt(id(req)));
+}));
+
+router.delete('/office/art/floor/:floorId', wrap((req, res) => {
+  revertOfficeArt(String(req.params.floorId));
+  res.json({ ok: true });
+}));
+
+router.delete('/office/art/:id', wrap((req, res) => {
+  deleteOfficeArt(id(req));
+  res.json({ ok: true });
 }));

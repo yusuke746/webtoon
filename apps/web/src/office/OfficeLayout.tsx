@@ -10,7 +10,8 @@ import {
   designChoices, inputHintFor, mainCharacters, nextHint, pendingProposals, pickChoices, planTalk, questRows,
   type Choice, type Delivery, type Requested,
 } from './workflow';
-import { DesignAltView, DesignView, EpisodesView, LocationsView, PagesView, PhotosView, ScenesView } from './Deliverables';
+import { DesignAltView, DesignView, EpisodesView, LocationsView, OfficeArtView, PagesView, PhotosView, ScenesView } from './Deliverables';
+import { describeFloor, renderFloorDataUrl } from './renderFloor';
 import { MeetingScene, type MeetingBubble } from './MeetingScene';
 
 /**
@@ -35,15 +36,16 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const loadStatus = useCallback(async () => {
     if (!projectId) { setStatus(null); return; }
     try {
-      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles, design, designBg] = await Promise.all([
+      const [project, episodes, characters, backgrounds, warnings, discussions, archive, styles, design, designBg, officeArt] = await Promise.all([
         api.getProject(projectId), api.listEpisodes(projectId), api.listCharacters(projectId),
         api.listBackgrounds(projectId), api.foreshadowWarnings(projectId), api.listDiscussions(projectId),
         api.getArchive(projectId).catch(() => null), api.listArtStyles(projectId).catch(() => []),
         api.getDesign(projectId, 'character').catch(() => null), api.getDesign(projectId, 'background').catch(() => null),
+        api.getOfficeArt().catch(() => null),
       ]);
       const style = styles.find((s) => s.id === project.artStyleId) ?? null;
       const imageCaps = style ? await api.getModelCaps(style.model).catch(() => null) : null;
-      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design, designBg, imageCaps });
+      setStatus({ project, episodes, characters, backgrounds, warnings, discussions, archive, artStyleName: style?.name ?? null, design, designBg, imageCaps, officeArt });
     } catch {
       setStatus(null);
     }
@@ -83,6 +85,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   }, [current?.npc.id]);
   useEffect(() => { if (!projectId && floorId !== '1F') { setFloorId('1F'); setPlayer({ ...FLOOR_BY_ID['1F'].spawn, facing: 'down' }); } }, [projectId, floorId]);
   const floor: Floor = (projectId ? FLOOR_BY_ID[floorId] : FLOOR_BY_ID['1F']) ?? FLOOR_BY_ID['1F'];
+  // 作品を選んでいなくても背景絵は出したいので、採用中の絵は別に持つ
+  const [officeArtAdopted, setOfficeArtAdopted] = useState<Record<string, string>>({});
+  useEffect(() => { api.getOfficeArt().then((a) => setOfficeArtAdopted(a.adopted)).catch(() => undefined); }, [status?.officeArt]);
+  const statusWithFloor = useMemo(() => (status ? { ...status, floorId: floor.id } : null), [status, floor.id]);
 
   // ---- ジョブ: 頼んだ仕事の控えと報告 ----
   const reqKey = `office:requested:${projectId}`;
@@ -201,6 +207,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       const proposals = await api.getDesign(projectId!, designKind);
       return { content: <DesignView proposals={proposals} />, fails: 0 };
     }
+    if (kind === 'office_art') {
+      const art = await api.getOfficeArt();
+      return { content: <OfficeArtView candidates={art.candidates} adopted={art.adopted} />, fails: 0 };
+    }
     if (kind === 'locations') {
       const bgs = await api.listBackgrounds(projectId!);
       return { content: <LocationsView backgrounds={bgs} />, fails: 0 };
@@ -222,7 +232,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     const busy = busyNpcIds.has(npc.id);
     const delivery = deliveries.find((d) => d.npcId === npc.id) ?? null;
     if (delivery) setDeliveries((ds) => ds.filter((d) => d.npcId !== npc.id));
-    const plan = planTalk(npc, status, focus, delivery, busy, npcLines(npc, status));
+    const plan = planTalk(npc, statusWithFloor, focus, delivery, busy, npcLines(npc, statusWithFloor));
     const base: TalkState = {
       npc, lines: plan.lines, index: 0, phase: 'lines', choices: plan.choices, reply: null,
       inputPurpose: 'chat', inputHint: inputHintFor('chat', npc), lastMessage: '', history: [],
@@ -234,7 +244,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       buildContent(plan.deliver.kind, ep, plan.deliver.episodeCountBefore, plan.deliver.designKind).then(({ content, fails }) =>
         setTalk((t) => (t && t.npc.id === npc.id ? { ...t, content, choices: withRedraw(t.choices, fails) } : t)));
     }
-  }, [busyNpcIds, deliveries, status, focus, buildContent, setFocus]);
+  }, [busyNpcIds, deliveries, statusWithFloor, focus, buildContent, setFocus]);
 
   const advance = useCallback(() => {
     setTalk((t) => {
@@ -260,6 +270,26 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     setTalk((t) => t && { ...t, phase: 'deliver', content, choices: withRedraw(choices, fails), reply: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildContent]);
+
+  /** フロアの下絵と説明文を作ってアップロードし、描き直しのジョブを頼む */
+  const requestOfficeArt = useCallback(async (targets: Floor[], hint = '') => {
+    if (!projectId) return;
+    setTalk((t) => t && { ...t, phase: 'waiting' });
+    try {
+      const floors: { floorId: string; sourceUrl: string; description: string }[] = [];
+      for (const f of targets) {
+        const dataUrl = await renderFloorDataUrl(f);
+        const { url } = await api.uploadDataUrl(dataUrl, `floor-${f.id.toLowerCase()}`);
+        floors.push({ floorId: f.id, sourceUrl: url, description: describeFloor(f) });
+      }
+      const job = await api.startOfficeArtJob(projectId, floors, hint);
+      track(job, { npcId: 'designer', kind: 'office_art', floorIds: floors.map((f) => f.floorId), label: job.label });
+      sayAndClose([
+        'わかりました。いまの配置を下絵にして、部屋の用途と家具の位置を文で添えて、高品質な 16bit 風に描き直します。',
+        hint ? `「${hint}」も伝えておきます。できたら呼びに行きます。` : '机や階段の位置はそのままなので、歩ける場所は変わりません。できたら呼びに行きます。',
+      ]);
+    } catch (e) { sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる'); }
+  }, [projectId, track, sayAndClose]);
 
   const choose = useCallback(async (key: string) => {
     if (!talk) return;
@@ -394,6 +424,46 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
+    if (key === 'office:art:hint') { openInput('office_art'); return; }
+    if (key === 'office:art:this' || key === 'office:art:all') {
+      await requestOfficeArt(key === 'office:art:all' ? FLOORS : [floor]);
+      return;
+    }
+    if (key === 'office:art:show') {
+      const art = await api.getOfficeArt();
+      const pending = art.candidates.filter((a) => !a.adopted);
+      const choices: Choice[] = pending.map((a, i) => ({ key: `office:art:adopt:${a.id}`, label: `${a.floorId} の候補${pending.filter((x) => x.floorId === a.floorId).indexOf(a) + 1} を採用する` }));
+      setTalk((t) => t && { ...t, phase: 'deliver', content: <OfficeArtView candidates={art.candidates} adopted={art.adopted} />, choices: [...choices, { key: 'office:art:this', label: 'このフロアをもう一度描いてもらう' }, { key: 'close', label: 'また今度' }], reply: null });
+      return;
+    }
+    if (key.startsWith('office:art:adopt:')) {
+      const id = Number(key.split(':')[3]);
+      setTalk((t) => t && { ...t, phase: 'waiting' });
+      try {
+        const a = await api.adoptOfficeArt(id);
+        await loadStatus();
+        const art = await api.getOfficeArt();
+        setOfficeArtAdopted(art.adopted);
+        if (art.candidates.some((x) => !x.adopted && x.floorId !== a.floorId)) {
+          const pending = art.candidates.filter((x) => !x.adopted);
+          const choices: Choice[] = pending.map((x) => ({ key: `office:art:adopt:${x.id}`, label: `${x.floorId} の候補を採用する` }));
+          setTalk((t) => t && { ...t, phase: 'deliver', content: <OfficeArtView candidates={art.candidates} adopted={art.adopted} />, choices: [...choices, { key: 'close', label: 'これで十分' }], reply: null });
+        } else {
+          sayAndClose([`${a.floorId} の絵を差し替えました。`, '気に入らなければ「元のタイル絵に戻す」でいつでも戻せます。'], 'ありがとう');
+        }
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'office:art:revert') {
+      try {
+        await api.revertOfficeArt(floor.id);
+        const art = await api.getOfficeArt();
+        setOfficeArtAdopted(art.adopted);
+        await loadStatus();
+        sayAndClose([`${floor.id} をタイル絵に戻しました。候補は残してあります。`], 'わかった');
+      } catch (e) { fail(e as Error); }
+      return;
+    }
     if (key === 'meeting:start') { openInput('topic'); return; }
     if (key.startsWith('meeting:open:') || key.startsWith('meeting:replay:')) {
       const [, how, idS] = key.split(':');
@@ -481,7 +551,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       setTalk({ ...talk, phase: 'menu', content: undefined, reply: `第${ep.number}話「${ep.title}」を担当します。`, choices: plan.choices });
       return;
     }
-  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus, openMeeting]);
+  }, [talk, status, focus, projectId, navigate, routeFor, openInput, sayAndClose, showDeliver, track, setFocus, loadStatus, openMeeting, floor, requestOfficeArt]);
 
   const send = useCallback(async (text: string) => {
     if (!talk || !projectId) return;
@@ -498,6 +568,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
           ],
         }))
         .catch((e: Error) => setTalk((t) => t && { ...t, phase: 'reply', reply: `（返事がもらえませんでした: ${e.message}）` }));
+      return;
+    }
+    if (purpose === 'office_art') {
+      await requestOfficeArt([floor], text);
       return;
     }
     if (purpose === 'topic') {
@@ -525,7 +599,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     } catch (e) {
       sayAndClose([`うまく頼めませんでした: ${(e as Error).message}`], '閉じる');
     }
-  }, [talk, projectId, focus, track, sayAndClose, loadStatus, openMeeting]);
+  }, [talk, projectId, focus, track, sayAndClose, loadStatus, openMeeting, requestOfficeArt, floor]);
 
   const cancelInput = useCallback(() => setTalk((t) => t && { ...t, phase: t.content ? 'deliver' : 'menu' }), []);
 
@@ -607,6 +681,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
               disabledNpcIds={disabledNpcIds}
               reportNpcIds={reportNpcIds}
               bubbles={meeting ? bubbles : undefined}
+              artUrl={officeArtAdopted[floor.id] ?? null}
             />
           </div>
         </div>
