@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { walkable, type Floor, type Npc } from './floors';
 import { ACTOR_H, SCALE, TILE, actorUrl, tileUrl, type Facing, type Frame } from './sprites';
+import { cellFor, loadSpriteCells, type SpriteCells } from './spriteSheet';
 
 const PX = TILE * SCALE; // 1タイル
 const AW = 16 * SCALE; // 人物の幅
@@ -25,6 +26,8 @@ interface Props {
   bubbles?: Record<string, { text: string; kind: 'say' | 'think' }>;
   /** 画像生成で描き直したフロアの絵（あればタイルの代わりに背景に敷く） */
   artUrl?: string | null;
+  /** 画像生成で描き直した人物のスプライトシート（NPC id または 'player' → シートの URL） */
+  spriteSheets?: Record<string, string>;
 }
 
 const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -34,7 +37,7 @@ const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
  * 移動は 矢印/WASD、会話は Enter/Space/E。クリックでも歩いて話しかけられる。
  */
 export function OfficeMap({
-  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds, bubbles, artUrl,
+  floor, player, onMove, onTalk, onStairs, active, activeNpcId, busyNpcIds, disabledNpcIds, reportNpcIds, bubbles, artUrl, spriteSheets,
 }: Props) {
   const rows = floor.map.length;
   const cols = floor.map[0].length;
@@ -45,6 +48,16 @@ export function OfficeMap({
   const frameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [frame, setFrame] = useState<Frame>(0);
   const [hover, setHover] = useState<Npc | null>(null);
+  // 描き直したスプライトは、シートを 3×3 に切って透過したセルで差し替える
+  const [cells, setCells] = useState<Record<string, SpriteCells>>({});
+  useEffect(() => {
+    let alive = true;
+    const entries = Object.entries(spriteSheets ?? {});
+    Promise.all(entries.map(async ([id, url]) => [id, await loadSpriteCells(url).catch(() => undefined)] as const))
+      .then((list) => { if (alive) setCells(Object.fromEntries(list.filter((x): x is readonly [string, SpriteCells] => !!x[1]))); });
+    return () => { alive = false; };
+  }, [spriteSheets]);
+  const spriteOf = (id: string, look: Parameters<typeof actorUrl>[0], facing: Facing, fr: Frame) => cellFor(cells[id], facing, fr) ?? actorUrl(look, facing, fr);
 
   const tileAt = useCallback((x: number, y: number) => floor.map[y]?.[x] ?? '#', [floor]);
   const canStep = useCallback(
@@ -217,7 +230,7 @@ export function OfficeMap({
             title={`${n.name}: ${n.hint}`}
           >
             <div className="shadow" />
-            <div className="sprite" style={{ backgroundImage: `url(${actorUrl(n.look, facing, 0)})` }} />
+            <div className="sprite" style={{ backgroundImage: `url(${spriteOf(n.id, n.look, facing, 0)})` }} />
             <div className="name">{n.name}</div>
             {bubbles?.[n.id] && <div className={`bubble ${bubbles[n.id].kind}`}>{bubbles[n.id].text}</div>}
             {!bubbles?.[n.id] && busy && <div className="bubble">{n.participant ? '…' : '作業中…'}</div>}
@@ -229,7 +242,7 @@ export function OfficeMap({
 
       <div className={`actor player ${player.facing}`} style={{ ...actorStyle(player.x, player.y), zIndex: 2 + player.y + 1 }}>
         <div className="shadow" />
-        <div className="sprite" style={{ backgroundImage: `url(${actorUrl(PLAYER_LOOK, player.facing, frame)})` }} />
+        <div className="sprite" style={{ backgroundImage: `url(${spriteOf('player', PLAYER_LOOK, player.facing, frame)})` }} />
       </div>
 
       {hover && active && (

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DesignProposal, Episode, OfficeArt, PanelRules, RefImage } from '@manga/shared';
 import { api } from '../api';
+import { FLOORS } from './floors';
+import { loadSpriteCells, type SpriteCells } from './spriteSheet';
 import { FallbackImage } from '../components/PageViewer';
 import type { EpisodeWithPanels } from '../api';
 import { PageViewer } from '../components/PageViewer';
@@ -200,26 +202,53 @@ export function PhotosView({ backgrounds, onChanged }: {
   );
 }
 
-/** オフィスの美術の候補（下絵と描き直した絵を並べる） */
+/** 対象 id の表示名（フロア id か "npc:<id>"） */
+export function officeArtLabel(targetId: string): string {
+  if (!targetId.startsWith('npc:')) return targetId;
+  const id = targetId.slice(4);
+  if (id === 'player') return 'あなた（担当編集）';
+  return FLOORS.flatMap((f) => f.npcs).find((n) => n.id === id)?.name ?? id;
+}
+
+/** 描き直したスプライトシートを透過して切り出し、3 方向の立ち姿を並べる */
+function SpritePreview({ url }: { url: string }) {
+  const [cells, setCells] = useState<SpriteCells | null>(null);
+  useEffect(() => { let alive = true; loadSpriteCells(url).then((c) => { if (alive) setCells(c); }).catch(() => undefined); return () => { alive = false; }; }, [url]);
+  if (!cells) return null;
+  return (
+    <div className="sprite-preview">
+      {['down:0', 'down:1', 'side:0', 'side:1', 'up:0'].map((k) => cells[k] && <img key={k} src={cells[k]} alt={k} />)}
+    </div>
+  );
+}
+
+/** オフィスの美術の候補（下絵と描き直した絵を並べる。人物は切り出した立ち姿も） */
 export function OfficeArtView({ candidates, adopted }: { candidates: OfficeArt[]; adopted: Record<string, string> }) {
   const pending = candidates.filter((a) => !a.adopted);
-  const byFloor = new Map<string, OfficeArt[]>();
-  for (const a of pending) { if (!byFloor.has(a.floorId)) byFloor.set(a.floorId, []); byFloor.get(a.floorId)!.push(a); }
+  const byTarget = new Map<string, OfficeArt[]>();
+  for (const a of pending) { if (!byTarget.has(a.floorId)) byTarget.set(a.floorId, []); byTarget.get(a.floorId)!.push(a); }
   if (!pending.length) return <div className="muted">描き直した絵の候補はありません。</div>;
   return (
     <div>
-      <h4>描き直したフロアの絵（採用すると、そのフロアの背景になります）</h4>
-      {[...byFloor.entries()].map(([floorId, list]) => (
-        <div key={floorId} className="office-art-group">
-          <strong>{floorId}</strong>{adopted[floorId] && <span className="muted" style={{ marginLeft: 8 }}>（いまは別の絵を採用中）</span>}
-          <div className="office-art-row">
-            {list[0].sourceUrl && <figure><FallbackImage src={list[0].sourceUrl} alt="下絵" /><figcaption>いまの配置（下絵）</figcaption></figure>}
-            {list.map((a, i) => (
-              <figure key={a.id}><FallbackImage src={a.url} alt={`${floorId} 候補${i + 1}`} /><figcaption>候補{i + 1}</figcaption></figure>
-            ))}
+      <h4>描き直した絵（採用すると、フロアの背景や人物の見た目になります）</h4>
+      {[...byTarget.entries()].map(([targetId, list]) => {
+        const sprite = targetId.startsWith('npc:');
+        return (
+          <div key={targetId} className={`office-art-group ${sprite ? 'sprite' : ''}`}>
+            <strong>{officeArtLabel(targetId)}</strong>{adopted[targetId] && <span className="muted" style={{ marginLeft: 8 }}>（いまは別の絵を採用中）</span>}
+            <div className="office-art-row">
+              {list[0].sourceUrl && <figure><FallbackImage src={list[0].sourceUrl} alt="下絵" /><figcaption>{sprite ? 'いまのドット絵（下絵）' : 'いまの配置（下絵）'}</figcaption></figure>}
+              {list.map((a, i) => (
+                <figure key={a.id}>
+                  <FallbackImage src={a.url} alt={`${targetId} 候補${i + 1}`} />
+                  <figcaption>候補{i + 1}</figcaption>
+                  {sprite && <SpritePreview url={a.url} />}
+                </figure>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

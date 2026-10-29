@@ -10,8 +10,10 @@ import {
   designChoices, inputHintFor, mainCharacters, nextHint, pendingProposals, pickChoices, planTalk, questRows,
   type Choice, type Delivery, type Requested,
 } from './workflow';
-import { DesignAltView, DesignView, EpisodesView, LocationsView, OfficeArtView, PagesView, PhotosView, ScenesView } from './Deliverables';
+import { DesignAltView, DesignView, EpisodesView, LocationsView, OfficeArtView, PagesView, PhotosView, ScenesView, officeArtLabel } from './Deliverables';
 import { describeFloor, renderFloorDataUrl } from './renderFloor';
+import { describeLook, renderSpriteSheet } from './spriteSheet';
+import { PLAYER_LOOK } from './OfficeMap';
 import { MeetingScene, type MeetingBubble } from './MeetingScene';
 
 /**
@@ -89,6 +91,8 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
   const [officeArtAdopted, setOfficeArtAdopted] = useState<Record<string, string>>({});
   useEffect(() => { api.getOfficeArt().then((a) => setOfficeArtAdopted(a.adopted)).catch(() => undefined); }, [status?.officeArt]);
   const statusWithFloor = useMemo(() => (status ? { ...status, floorId: floor.id } : null), [status, floor.id]);
+  /** 採用中の人物スプライト（"npc:<id>" → シート URL を <id> → URL に） */
+  const spriteSheets = useMemo(() => Object.fromEntries(Object.entries(officeArtAdopted).filter(([k]) => k.startsWith('npc:')).map(([k, v]) => [k.slice(4), v])), [officeArtAdopted]);
 
   // ---- ジョブ: 頼んだ仕事の控えと報告 ----
   const reqKey = `office:requested:${projectId}`;
@@ -424,6 +428,36 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
       } catch (e) { fail(e as Error); }
       return;
     }
+    if (key === 'office:sprites:all') {
+      if (!projectId) return;
+      setTalk((t) => t && { ...t, phase: 'waiting' });
+      try {
+        const people = [
+          ...FLOORS.flatMap((f) => f.npcs).map((n) => ({ id: n.id, name: n.name, title: n.title, look: n.look })),
+          { id: 'player', name: 'the editor in charge (the player)', title: 'manga editor', look: PLAYER_LOOK },
+        ];
+        const targets: { floorId: string; sourceUrl: string; description: string }[] = [];
+        for (const p of people) {
+          const dataUrl = await renderSpriteSheet(p.look);
+          const { url } = await api.uploadDataUrl(dataUrl, `sprite-${p.id}`);
+          targets.push({ floorId: `npc:${p.id}`, sourceUrl: url, description: describeLook(p.name, p.title, p.look) });
+        }
+        const job = await api.startOfficeArtJob(projectId, targets);
+        track(job, { npcId: 'designer', kind: 'office_art', floorIds: targets.map((t) => t.floorId), label: job.label });
+        sayAndClose([`わかりました。${people.length} 人ぶん、いまのドット絵を 3 方向 × 3 コマのシートにして、シルエットと色を保ったまま描き直します。`, '人数が多いので少し時間がかかります。できたら呼びに行きます。']);
+      } catch (e) { fail(e as Error); }
+      return;
+    }
+    if (key === 'office:sprites:revert') {
+      try {
+        const art = await api.getOfficeArt();
+        for (const k of Object.keys(art.adopted)) if (k.startsWith('npc:')) await api.revertOfficeArt(k);
+        setOfficeArtAdopted((await api.getOfficeArt()).adopted);
+        await loadStatus();
+        sayAndClose(['人物を元のドット絵に戻しました。候補は残してあります。'], 'わかった');
+      } catch (e) { fail(e as Error); }
+      return;
+    }
     if (key === 'office:art:hint') { openInput('office_art'); return; }
     if (key === 'office:art:this' || key === 'office:art:all') {
       await requestOfficeArt(key === 'office:art:all' ? FLOORS : [floor]);
@@ -432,8 +466,29 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
     if (key === 'office:art:show') {
       const art = await api.getOfficeArt();
       const pending = art.candidates.filter((a) => !a.adopted);
-      const choices: Choice[] = pending.map((a, i) => ({ key: `office:art:adopt:${a.id}`, label: `${a.floorId} の候補${pending.filter((x) => x.floorId === a.floorId).indexOf(a) + 1} を採用する` }));
+      const spriteTargets = new Set(pending.filter((a) => a.floorId.startsWith('npc:')).map((a) => a.floorId));
+      const choices: Choice[] = [
+        ...(spriteTargets.size > 1 ? [{ key: 'office:art:adopt:sprites', label: `人物 ${spriteTargets.size} 人ぶんの候補1をまとめて採用する` }] : []),
+        ...pending.map((a) => ({ key: `office:art:adopt:${a.id}`, label: `${officeArtLabel(a.floorId)} の候補${pending.filter((x) => x.floorId === a.floorId).indexOf(a) + 1} を採用する` })),
+      ];
       setTalk((t) => t && { ...t, phase: 'deliver', content: <OfficeArtView candidates={art.candidates} adopted={art.adopted} />, choices: [...choices, { key: 'office:art:this', label: 'このフロアをもう一度描いてもらう' }, { key: 'close', label: 'また今度' }], reply: null });
+      return;
+    }
+    if (key === 'office:art:adopt:sprites') {
+      setTalk((t) => t && { ...t, phase: 'waiting' });
+      try {
+        const art = await api.getOfficeArt();
+        const seen = new Set<string>();
+        // 候補は新しい順に並ぶので、対象ごとに最初に出てくるもの（候補1）を採用
+        for (const a of art.candidates) {
+          if (!a.floorId.startsWith('npc:') || a.adopted || seen.has(a.floorId)) continue;
+          seen.add(a.floorId);
+          await api.adoptOfficeArt(a.id);
+        }
+        setOfficeArtAdopted((await api.getOfficeArt()).adopted);
+        await loadStatus();
+        sayAndClose([`${seen.size} 人ぶんの絵を差し替えました。`, '気に入らなければ「人物を元のドット絵に戻す」でいつでも戻せます。'], 'ありがとう');
+      } catch (e) { fail(e as Error); }
       return;
     }
     if (key.startsWith('office:art:adopt:')) {
@@ -446,10 +501,10 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
         setOfficeArtAdopted(art.adopted);
         if (art.candidates.some((x) => !x.adopted && x.floorId !== a.floorId)) {
           const pending = art.candidates.filter((x) => !x.adopted);
-          const choices: Choice[] = pending.map((x) => ({ key: `office:art:adopt:${x.id}`, label: `${x.floorId} の候補を採用する` }));
+          const choices: Choice[] = pending.map((x) => ({ key: `office:art:adopt:${x.id}`, label: `${officeArtLabel(x.floorId)} の候補を採用する` }));
           setTalk((t) => t && { ...t, phase: 'deliver', content: <OfficeArtView candidates={art.candidates} adopted={art.adopted} />, choices: [...choices, { key: 'close', label: 'これで十分' }], reply: null });
         } else {
-          sayAndClose([`${a.floorId} の絵を差し替えました。`, '気に入らなければ「元のタイル絵に戻す」でいつでも戻せます。'], 'ありがとう');
+          sayAndClose([`${a.floorId.startsWith('npc:') ? '人物' : a.floorId} の絵を差し替えました。`, '気に入らなければ「元に戻す」でいつでも戻せます。'], 'ありがとう');
         }
       } catch (e) { fail(e as Error); }
       return;
@@ -682,6 +737,7 @@ export function OfficeLayout({ children }: { children: React.ReactNode }) {
               reportNpcIds={reportNpcIds}
               bubbles={meeting ? bubbles : undefined}
               artUrl={officeArtAdopted[floor.id] ?? null}
+              spriteSheets={spriteSheets}
             />
           </div>
         </div>

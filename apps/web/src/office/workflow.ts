@@ -290,7 +290,9 @@ export function planTalk(
         { key: 'office:art:this', label: 'このフロアの美術を描き直してもらう（AI で高品質に）' },
         { key: 'office:art:all', label: '全フロアの美術を描き直してもらう' },
         { key: 'office:art:hint', label: '注文をつけて、このフロアを描き直してもらう' },
+        { key: 'office:sprites:all', label: '人物のドット絵を描き直してもらう（全員 + あなた）' },
       ];
+      if (Object.keys(status?.officeArt?.adopted ?? {}).some((k) => k.startsWith('npc:'))) choices.push({ key: 'office:sprites:revert', label: '人物を元のドット絵に戻す' });
       if (status?.officeArt?.candidates.some((a) => !a.adopted)) choices.push({ key: 'office:art:show', label: '描き直した絵の候補を見せて' });
       if (status?.officeArt?.adopted[status.floorId ?? '']) choices.push({ key: 'office:art:revert', label: 'このフロアを元のタイル絵に戻す' });
       return { lines: baseLines, choices: [...choices, chat, enter('画風の設定を見る'), close] };
