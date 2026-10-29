@@ -13,11 +13,13 @@ export interface Choice { key: string; label: string }
 export interface Requested {
   jobId: number;
   npcId: string;
-  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations' | 'discussion';
+  kind: 'structure' | 'scenes' | 'panels' | 'images' | 'archive' | 'design' | 'locations' | 'discussion' | 'office_art';
   /** design のとき: キャラか背景か */
   designKind?: DesignKind;
   /** discussion のとき: 会議の id */
   discussionId?: number;
+  /** office_art のとき: 描き直したフロア */
+  floorIds?: string[];
   episodeId?: number;
   label: string;
   /** 依頼時点の話数（構成依頼で新しい話を見分けるため） */
@@ -192,6 +194,12 @@ export function planTalk(
           deliver: delivery,
         };
       }
+      case 'office_art':
+        return {
+          lines: ['オフィスの絵、描き上がりました。', 'いまの絵と並べて見てください。気に入ったら採用で。'],
+          choices: [{ key: 'office:art:show', label: '見せて' }, close],
+          deliver: delivery,
+        };
       case 'discussion':
         return {
           lines: ['会議がまとまりました。', '結論を聞きますか。それとも最初から見ますか。'],
@@ -276,6 +284,15 @@ export function planTalk(
         ? [{ key: 'propose:next', label: '次の展開をどう考えてるか聞く' }, { key: 'propose:review', label: focus ? `${f}の気になる点を聞く` : 'いまの構成の気になる点を聞く' }]
         : [];
       return { lines: baseLines, choices: [...choices, chat, enter('ダッシュボードを見る'), close] };
+    }
+    case 'designer': {
+      const choices: Choice[] = [
+        { key: 'office:art:this', label: 'このフロアの美術を描き直してもらう（AI で高品質に）' },
+        { key: 'office:art:all', label: '全フロアの美術を描き直してもらう' },
+      ];
+      if (status?.officeArt?.candidates.some((a) => !a.adopted)) choices.push({ key: 'office:art:show', label: '描き直した絵の候補を見せて' });
+      if (status?.officeArt?.adopted[status.floorId ?? '']) choices.push({ key: 'office:art:revert', label: 'このフロアを元のタイル絵に戻す' });
+      return { lines: baseLines, choices: [...choices, chat, enter('画風の設定を見る'), close] };
     }
     case 'foreshadow': {
       const choices: Choice[] = eps.length ? [{ key: 'propose:review', label: '伏線の回収案を聞く' }] : [];

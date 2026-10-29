@@ -181,7 +181,7 @@ export const FLOORS: Floor[] = [
       {
         id: 'designer', name: '画材担当', title: '画風・カスタマイズ', x: 2, y: 2, room: '画風・カスタマイズ',
         look: { hair: '#a04a8a', cloth: '#f0c050', hairStyle: 'ponytail' },
-        route: '/projects/{p}/settings', hint: '画風・コマ割りルール・構成テンプレート', canChat: true,
+        route: '/projects/{p}/settings', hint: '画風・コマ割りルール・構成テンプレート・オフィスの美術', canChat: true, jobKinds: ['office_art'],
       },
     ],
   },

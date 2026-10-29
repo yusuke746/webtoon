@@ -109,6 +109,10 @@ API: `POST /api/uploads {dataUrl,name}`, `POST /api/backgrounds/:id/photos {urls
 - ドット絵は 16×24 の人物（3方向×歩行2フレーム、髪型・服色・眼鏡をレイヤー合成）と陰影付き 16×16 タイル。
   `apps/web/src/office/art/` に文字列で定義しており、差し替えや追加はそこを編集する
 - ヘッダの「クラシック表示」で従来のサイドバー UI に切り替えられる（`localStorage` の `ui:classic`）
+- **オフィスの美術を AI で描き直す**: 手打ちのタイルでは絵の密度に限界があるので、3F の画材担当に「このフロアの美術を描き直してもらう」
+  （または全フロア）と頼むと、いまのタイル配置を下絵にして画像生成モデル（`OFFICE_ART_MODEL`、既定は flux-kontext-pro）が
+  「配置を保ったまま高品質な 16bit 風」に描き直す。下絵と並べて見て採用すると、そのフロアの背景として表示される（歩ける場所・机・階段の当たり判定は下絵のまま）。
+  「元のタイル絵に戻す」でいつでも戻せる。人物のドット絵は従来のまま（背景の上に重ねる）
 - 実装は `apps/web/src/office/`（`art/` ドット絵 / `sprites.ts` 描画 / `floors.ts` フロア定義 / `OfficeMap.tsx` / `TalkWindow.tsx` 会話 / `dialogue.ts` 定型文 / `OfficeLayout.tsx`）
 
 ## 制作フロー
@@ -279,6 +283,7 @@ cp .env.example .env    # Windows: copy .env.example .env
 | `DESIGN_VIEWS`               | `1`                              | `0` で採用時の4枚セット（正面・横顔・全身・表情）の派生を止める              |
 | `REPLICATE_VARIATION_MODEL`  | `black-forest-labs/flux-kontext-pro` | 4枚セットの派生に使う image-to-image モデル                           |
 | `REPLICATE_STYLIZE_MODEL`    | 画風のモデル（画像入力非対応なら `flux-kontext-pro`） | ロケハン写真を背景に起こすモデル                               |
+| `OFFICE_ART_MODEL`           | `black-forest-labs/flux-kontext-pro` | オフィスの美術（フロアの背景絵）を下絵から描き直すモデル（参照画像対応が必要） |
 | `DATA_DIR`                   | `./data`                         | SQLite DB の保存先                                                        |
 
 Claude CLI / Replicate なしで動作確認する場合:

@@ -310,7 +310,8 @@ export type JobKind =
   | 'lora_train'
   | 'archive'
   | 'design_background' // 背景の設定画づくり（ロケハン担当）
-  | 'locations';        // 場所の拾い出し（ロケハン担当）
+  | 'locations'         // 場所の拾い出し（ロケハン担当）
+  | 'office_art';       // オフィスの美術（フロアの背景絵）を画像生成で描き直す
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -428,3 +429,18 @@ export const DEFAULT_STORY_TEMPLATE: StoryTemplate = {
   pagesPerEpisode: 8,
   instructions: '各話の最後に次話への引きを作ること。',
 };
+
+// ---------- オフィスの美術（フロアの背景絵） ----------
+
+export interface OfficeArt {
+  id: number;
+  /** フロア id（B1 / 1F / …） */
+  floorId: string;
+  /** 生成した絵（ローカル配信 URL） */
+  url: string;
+  /** 下絵（タイル配置を描いたもの） */
+  sourceUrl: string | null;
+  prompt: string;
+  adopted: boolean;
+  createdAt: string;
+}
