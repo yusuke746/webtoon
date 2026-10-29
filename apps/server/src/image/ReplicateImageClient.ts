@@ -107,22 +107,30 @@ export class ReplicateImageClient implements ImageClient {
       break;
     }
 
-    // Prefer: wait でも完了しない場合はポーリング
+    // Prefer: wait でも完了しない場合はポーリング。
+    // ポーリングの応答が予測ではないこと（429 やエラー本文で urls が無い）があるため、取得 URL は最初の応答のものを使い続ける
+    const getUrl: string | undefined = prediction?.urls?.get;
     const deadline = Date.now() + 180_000;
-    while (
-      prediction.status !== 'succeeded' &&
-      prediction.status !== 'failed' &&
-      prediction.status !== 'canceled'
-    ) {
+    let badPolls = 0;
+    while (prediction?.status !== 'succeeded' && prediction?.status !== 'failed' && prediction?.status !== 'canceled') {
+      if (!getUrl) throw new Error(`Replicate の応答が想定外です: ${JSON.stringify(prediction).slice(0, 300)}`);
       if (Date.now() > deadline) throw new Error('Replicate の生成がタイムアウトしました');
       await new Promise((r) => setTimeout(r, 2000));
-      const poll = await fetch(prediction.urls.get, {
-        headers: { Authorization: `Bearer ${this.token}` },
-      });
-      prediction = await poll.json();
+      const poll = await fetch(getUrl, { headers: { Authorization: `Bearer ${this.token}` } });
+      const body: any = await poll.json().catch(() => null);
+      if (!poll.ok || !body || typeof body.status !== 'string') {
+        // 一時的な失敗（429 など）は数回まで見逃す
+        if (++badPolls > 5) throw new Error(`Replicate の状態取得に失敗しました (${poll.status}): ${JSON.stringify(body).slice(0, 300)}`);
+        console.warn(`[image] 状態取得に失敗（${poll.status}）。再試行します（${badPolls}/5）`);
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      prediction = body;
     }
     if (prediction.status !== 'succeeded') {
-      throw new Error(`Replicate の生成が失敗しました: ${prediction.error ?? prediction.status}`);
+      const reason = String(prediction.error ?? prediction.status);
+      const nsfw = /nsfw|safety|sensitive content|content policy|unsafe/i.test(reason);
+      throw new Error(`Replicate の生成が失敗しました: ${reason}${nsfw ? '（モデル側の NSFW 判定。コマの imagePrompt の表現を変えて再作画してください）' : ''}`);
     }
     const output = prediction.output;
     const url = Array.isArray(output) ? output[0] : output;

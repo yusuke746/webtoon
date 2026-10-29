@@ -7,6 +7,7 @@ import cors from 'cors';
 import { router } from './routes.js';
 import { failStaleJobs } from './engines/jobs.js';
 import { IMAGES_DIR } from './image/storage.js';
+import { checkClaudeCli } from './llm/ClaudeCliClient.js';
 
 const app = express();
 app.use(cors());
@@ -27,6 +28,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // 「永遠に0%」の表示を残さないよう起動時に失敗扱いにする。
 const stale = failStaleJobs();
 if (stale > 0) console.log(`[jobs] 中断された実行中ジョブを ${stale} 件クリーンアップしました`);
+
+// Claude CLI を使う設定なら、起動時に場所とログイン状態を確かめておく（失敗の原因を早く見せる）
+if ((process.env.LLM_CLIENT ?? 'claude') !== 'mock') checkClaudeCli().catch((e) => console.warn('[llm] 事前確認に失敗:', (e as Error).message));
 
 const port = Number(process.env.PORT ?? 3001);
 const server = app.listen(port, () => {
