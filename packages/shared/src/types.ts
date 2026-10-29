@@ -78,6 +78,8 @@ export interface Character {
   loraUrl: string | null;
   /** 絵の指示用の固定文（英語）。全コマで同じ文言を画像プロンプトに置く。Claude が一度だけ生成 */
   visualPrompt: string | null;
+  /** 画像プロンプト内でこの対象を指す英語の呼び名（例: the black-haired schoolboy）。日本語の名前を画像に描かせないため */
+  visualHandle: string | null;
   /** ライブラリからキャスティングした場合の元アセットID */
   sourceAssetId: number | null;
   createdAt: string;
@@ -239,6 +241,8 @@ export interface Background {
   loraUrl: string | null;
   /** 絵の指示用の固定文（英語） */
   visualPrompt: string | null;
+  /** 画像プロンプト内でこの場所を指す英語の呼び名 */
+  visualHandle: string | null;
   sourceAssetId: number | null;
   createdAt: string;
 }

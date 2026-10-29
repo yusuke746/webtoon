@@ -1,6 +1,6 @@
 import type { Character, Dialogue, Episode, Foreshadowing, Panel, PanelLayout, Project, Scene } from '@manga/shared';
 import { db, rowToCharacter, rowToEpisode, rowToForeshadowing, rowToPanel, rowToProject } from '../db.js';
-import { getLLMClient, extractJson } from '../llm/index.js';
+import { getLLMClient, extractJson, type LLMTask } from '../llm/index.js';
 import { getImageClient } from '../image/index.js';
 import { persistImage } from '../image/storage.js';
 import {
@@ -10,7 +10,8 @@ import {
 import { rowToArtStyle } from '../db.js';
 import { listBackgrounds, listRefImages } from './visual.js';
 import { archiveDir, buildSeriesContext, getArchiveInfo, registerEpisode, syncArchive } from './archive.js';
-import { ART_CHECK_ENABLED, ART_CHECK_MAX_RETRY, NO_TEXT_NEGATIVE, NO_TEXT_PROMPT, checkPanelImage, subjectBlock } from './artcheck.js';
+import { ART_CHECK_ENABLED, ART_CHECK_MAX_RETRY, NO_TEXT_NEGATIVE, NO_TEXT_PROMPT, checkPanelImage, ensureVisual, replaceNamesWithHandles, subjectBlock } from './artcheck.js';
+import { RETRY_IN_JAPANESE, looksJapanese } from '../llm/lang.js';
 
 // ---------- 取得ヘルパ ----------
 
@@ -42,6 +43,19 @@ interface StructureOutput {
   }[];
 }
 
+/**
+ * 物語の文章を返す呼び出し。出力が日本語になっていなければ、注意を足して 1 回だけ作り直させる。
+ * pick は「日本語であるべき文章」を取り出す関数（タイトル・要約・セリフなど）。
+ */
+async function completeInJapanese<T>(req: { task: LLMTask; prompt: string; cwd?: string; system?: string }, parse: (text: string) => T, pick: (out: T) => string): Promise<T> {
+  const llm = getLLMClient();
+  const out = parse(await llm.complete(req));
+  if (looksJapanese(pick(out)) || process.env.LANG_CHECK === '0') return out;
+  console.warn(`[llm] ${req.task}: 出力が日本語ではありません。日本語で作り直させます`);
+  const retry = parse(await llm.complete({ ...req, prompt: req.prompt + RETRY_IN_JAPANESE }));
+  return looksJapanese(pick(retry)) ? retry : out;
+}
+
 /** あらすじ → 話数構成 + 伏線の構造データを生成し DB へ保存 */
 export async function generateStructure(projectId: number, episodeCount: number, instruction?: string): Promise<Episode[]> {
   const project = getProject(projectId);
@@ -50,12 +64,11 @@ export async function generateStructure(projectId: number, episodeCount: number,
 
   // 続きの話を作るときは、連載マネージャーの文脈（連載メモ・各話要約）を渡して矛盾を防ぐ
   const seriesContext = existing.length ? buildSeriesContext(projectId) : '';
-  const text = await getLLMClient().complete({
-    task: 'structure',
-    prompt: structurePrompt(project, episodeCount, existing, foreshadowings, seriesContext, instruction),
-    cwd: seriesContext ? archiveDir(project) : undefined,
-  });
-  const out = extractJson<StructureOutput>(text);
+  const out = await completeInJapanese(
+    { task: 'structure', prompt: structurePrompt(project, episodeCount, existing, foreshadowings, seriesContext, instruction), cwd: seriesContext ? archiveDir(project) : undefined },
+    (text) => extractJson<StructureOutput>(text),
+    (o) => (o.episodes ?? []).map((e: any) => `${e.title ?? ''} ${e.summary ?? ''} ${(e.scenes ?? []).map((sc: any) => `${sc.title ?? ''} ${sc.summary ?? ''}`).join(' ')}`).join(' '),
+  );
 
   const insertEp = db.prepare(
     'INSERT INTO episodes (project_id, number, title, summary, scenes, status) VALUES (?, ?, ?, ?, ?, ?)',
@@ -143,12 +156,11 @@ export async function reviseEpisodeScenes(episodeId: number, instruction: string
   const episode = rowToEpisode(epRow as any);
   const project = getProject(episode.projectId);
   const seriesContext = buildSeriesContext(episode.projectId, { uptoEpisode: episode.number, includePreviousScript: false, maxChars: 8000 });
-  const text = await getLLMClient().complete({
-    task: 'revise_scenes',
-    prompt: reviseScenesPrompt(project, episode, instruction, seriesContext),
-    cwd: seriesContext ? archiveDir(project) : undefined,
-  });
-  const out = extractJson<{ title?: string; summary?: string; scenes?: Scene[] }>(text);
+  const out = await completeInJapanese(
+    { task: 'revise_scenes', prompt: reviseScenesPrompt(project, episode, instruction, seriesContext), cwd: seriesContext ? archiveDir(project) : undefined },
+    (text) => extractJson<{ title?: string; summary?: string; scenes?: Scene[] }>(text),
+    (o) => `${o.title ?? ''} ${o.summary ?? ''} ${(o.scenes ?? []).map((sc) => `${sc.title} ${sc.summary}`).join(' ')}`,
+  );
   db.prepare('UPDATE episodes SET title = ?, summary = ?, scenes = ? WHERE id = ?').run(
     out.title?.trim() || episode.title, out.summary?.trim() || episode.summary,
     JSON.stringify(out.scenes?.length ? out.scenes : episode.scenes), episodeId,
@@ -192,12 +204,11 @@ export async function generatePanels(episodeId: number, instruction?: string): P
     out = extractJson<PanelsOutput>(text);
     if (!(out.panels ?? []).length) out = current;
   } else {
-    const text = await llm.complete({
-      task: 'panels',
-      prompt: panelsPrompt(project, episode, characters, backgrounds, seriesContext, instruction),
-      cwd,
-    });
-    out = extractJson<PanelsOutput>(text);
+    out = await completeInJapanese(
+      { task: 'panels', prompt: panelsPrompt(project, episode, characters, backgrounds, seriesContext, instruction), cwd },
+      (text) => extractJson<PanelsOutput>(text),
+      (o) => (o.panels ?? []).map((pn) => `${pn.description ?? ''} ${(pn.dialogues ?? []).map((d) => d.text).join(' ')}`).join(' '),
+    );
   }
 
   // ネーム批評ループ: 演出担当・読者代表が批評し、改稿版を生成する。
@@ -346,7 +357,7 @@ export function buildPanelImagePrompt(
   imagePrompt: string,
   parts: { subjects?: string; fixHint?: string } = {},
 ): string {
-  return [stylePrompt, parts.subjects, imagePrompt, parts.fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', ');
+  return ['no text or lettering anywhere in the image', stylePrompt, parts.subjects, imagePrompt, parts.fixHint, NO_TEXT_PROMPT].filter(Boolean).join(', ');
 }
 
 export async function generatePanelImage(panelId: number, fixHint = ''): Promise<Panel> {
@@ -370,6 +381,13 @@ export async function generatePanelImage(panelId: number, fixHint = ''): Promise
 
   // 登場人物・舞台の固定文を先頭に置く（全コマで同じ文言 → 見た目がブレにくい）
   const subjects = await subjectBlock(panelChars, background);
+  // 画像プロンプトの中の日本語の名前は英語の呼び名に置き換える（名前が画像に文字として描かれるのを防ぐ）
+  const handles = new Map<string, string>();
+  for (const c of panelChars) handles.set(c.name, (await ensureVisual('character', c.id)).handle);
+  if (background) handles.set(background.name, (await ensureVisual('background', background.id)).handle);
+  const namePairs = [...handles.entries()].map(([name, handle]) => ({ name, handle }));
+  const englishPrompt = replaceNamesWithHandles(panel.imagePrompt, namePairs);
+  const englishFix = replaceNamesWithHandles(fixHint, namePairs);
   // 設定画（採用1枚 + 派生ビュー）をまとめて渡す。対応モデルなら画像で一貫性を保てる
   const sheetOf = (kind: 'character' | 'background', id: number, name: string, adopted: string | null) => {
     const views = listRefImages(kind, id).filter((r) => r.role === 'view').map((r) => r.url);
@@ -377,14 +395,14 @@ export async function generatePanelImage(panelId: number, fixHint = ''): Promise
     return urls.length ? [{ label: name, kind, urls }] : [];
   };
   const referenceSheets = [
-    ...panelChars.flatMap((c) => sheetOf('character', c.id, c.name, c.refImageUrl)),
-    ...(background ? sheetOf('background', background.id, background.name, background.refImageUrl) : []),
+    ...panelChars.flatMap((c) => sheetOf('character', c.id, handles.get(c.name) || c.name, c.refImageUrl)),
+    ...(background ? sheetOf('background', background.id, handles.get(background.name) || background.name, background.refImageUrl) : []),
   ];
 
   db.prepare("UPDATE panels SET status = 'generating', check_status = 'none', check_notes = NULL WHERE id = ?").run(panelId);
   try {
     const result = await getImageClient().generate({
-      prompt: buildPanelImagePrompt(style?.stylePrompt, panel.imagePrompt, { subjects, fixHint }),
+      prompt: buildPanelImagePrompt(style?.stylePrompt, englishPrompt, { subjects, fixHint: englishFix }),
       negativePrompt: NO_TEXT_NEGATIVE,
       referenceSheets,
       model: style?.model ?? process.env.REPLICATE_MODEL ?? 'black-forest-labs/flux-schnell',

@@ -190,7 +190,7 @@ export class MockLLMClient implements LLMClient {
 
       case 'visual_prompt': {
         const name = req.prompt.match(/## 対象の名前\n(.*)/)?.[1] ?? 'subject';
-        return JSON.stringify({ prompt: `${name}, 16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)` });
+        return JSON.stringify({ prompt: '16 year old girl, short black bob hair with a silver crescent hairpin, large amber eyes, dark green apron over school uniform, slender (mock)', handle: `the black-bobbed girl (${name.length})` });
       }
 
       case 'locations':
