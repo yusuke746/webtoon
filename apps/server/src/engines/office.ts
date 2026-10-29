@@ -33,20 +33,38 @@ export function adoptedOfficeArt(): Record<string, string> {
   return out;
 }
 
+/** 人物のスプライトシート（3 行 = 正面/横/後ろ、3 列 = 立ち/歩き 1/歩き 2）を描き直す指示 */
+const SPRITE_ART_PROMPT = [
+  'Redraw this pixel art character sprite sheet as a high-quality 16-bit SNES JRPG sprite in the style of Chrono Trigger.',
+  'The reference is a 3 by 3 grid of equal cells: rows from top to bottom are facing down (front view), facing right (side view), facing up (back view); columns from left to right are standing, walking frame 1, walking frame 2.',
+  'Keep exactly the same 3 by 3 grid with the same cell size, and keep the character at the same position, scale and pose in every cell. Keep the same silhouette, hairstyle, hair color and clothing colors as the reference; add proper shading, clean outlines and detail. All nine cells must show the same character.',
+  'The background of every cell must stay a flat solid magenta color (#FF00FF) with no gradient, no shadow and no outline around the cells. No text, no letters, no grid lines.',
+].join(' ');
+
+/** フロアの絵か人物のスプライトか（id の接頭辞で区別。人物は "npc:<id>"） */
+export function officeArtKind(targetId: string): 'floor' | 'sprite' {
+  return targetId.startsWith('npc:') ? 'sprite' : 'floor';
+}
+
 export async function generateOfficeArt(floorId: string, sourceUrl: string, hint = '', description = ''): Promise<OfficeArt> {
   const model = OFFICE_ART_MODEL;
   const caps = modelCaps(model);
   if (caps.refMode === 'none') throw new Error(`モデル ${model} は参照画像を受け取れません。OFFICE_ART_MODEL に flux-kontext-pro や google/nano-banana を指定してください`);
-  // 部屋の用途と「何がどこにあるか」の文を添える（モデルは下絵の記号の意味を知らない）。要望があれば最後に
-  const prompt = [description.trim() ? `Room: ${description.trim()}` : '', OFFICE_ART_PROMPT, hint.trim() ? `Additional request: ${hint.trim()}` : ''].filter(Boolean).join(' ');
+  const kind = officeArtKind(floorId);
+  // 部屋の用途と「何がどこにあるか」（人物なら見た目）の文を添える（モデルは下絵の記号の意味を知らない）。要望があれば最後に
+  const prompt = [
+    description.trim() ? `${kind === 'sprite' ? 'Character' : 'Room'}: ${description.trim()}` : '',
+    kind === 'sprite' ? SPRITE_ART_PROMPT : OFFICE_ART_PROMPT,
+    hint.trim() ? `Additional request: ${hint.trim()}` : '',
+  ].filter(Boolean).join(' ');
   const result = await getImageClient().generate({
     prompt,
     model,
-    referenceSheets: [{ label: 'the floor layout to redraw', kind: 'background', urls: [sourceUrl] }],
-    // 下絵と同じ縦横比で返せるモデルはそれを使う。無ければ下絵（16:10）に一番近い比率になる
-    aspectRatio: caps.aspectValues?.includes('match_input_image') ? 'match_input_image' : '16:10',
+    referenceSheets: [{ label: kind === 'sprite' ? 'the character sprite sheet to redraw' : 'the floor layout to redraw', kind: kind === 'sprite' ? 'character' : 'background', urls: [sourceUrl] }],
+    // 下絵と同じ縦横比で返せるモデルはそれを使う。無ければ下絵に一番近い比率になる（フロア 16:10、シート 3:4 付近）
+    aspectRatio: caps.aspectValues?.includes('match_input_image') ? 'match_input_image' : kind === 'sprite' ? '3:4' : '16:10',
   });
-  const url = await persistImage(result.url, `office-${floorId.toLowerCase()}`);
+  const url = await persistImage(result.url, `office-${floorId.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`);
   const r = db.prepare('INSERT INTO office_art (floor_id, url, source_url, prompt) VALUES (?, ?, ?, ?)').run(floorId, url, sourceUrl, prompt);
   return rowToOfficeArt(db.prepare('SELECT * FROM office_art WHERE id = ?').get(Number(r.lastInsertRowid)) as any);
 }
@@ -58,7 +76,7 @@ export function startOfficeArtJob(projectId: number | null, floors: { floorId: s
     {
       projectId,
       kind: 'office_art',
-      label: `オフィスの美術: ${floors.map((f) => f.floorId).join('・')}`,
+      label: floors.every((f) => officeArtKind(f.floorId) === 'sprite') ? `人物のドット絵: ${floors.length} 人` : `オフィスの美術: ${floors.map((f) => f.floorId).join('・')}`,
       totalSteps: floors.length,
       step: `${floors[0].floorId} を描いています…`,
     },
