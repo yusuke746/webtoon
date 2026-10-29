@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Panel, PanelRules } from '@manga/shared';
 import { api } from '../api';
 import { useFetch } from '../hooks';
 import { PageViewer, PanelContent } from '../components/PageViewer';
+import { readingOrder, stripHeightRatio } from '../reader/layout';
+import { StripExport } from '../reader/StripExport';
 
 /**
  * 縦読み（Webtoon）リーダー。1話を縦スクロールで読む。
@@ -13,26 +14,6 @@ import { PageViewer, PanelContent } from '../components/PageViewer';
  * - コマの高さはネームのレイアウト（グリッド比）から決める。作画のアスペクト比もこれに合わせて生成している
  * - Space / ↓ / → で 1 画面ぶん進む、↑ / ← で戻る、Esc で戻る。読んだ位置は話ごとに覚える
  */
-
-/** コマを読み順に並べる */
-export function readingOrder(panels: Panel[], rules: PanelRules): Panel[] {
-  const dir = rules.readingDirection;
-  return [...panels].sort((a, b) => {
-    const pa = a.layout.page ?? 1, pb = b.layout.page ?? 1;
-    if (pa !== pb) return pa - pb;
-    if (a.layout.y !== b.layout.y) return a.layout.y - b.layout.y;
-    if (a.layout.x !== b.layout.x) return dir === 'rtl' ? b.layout.x - a.layout.x : a.layout.x - b.layout.x;
-    return a.index - b.index;
-  });
-}
-
-/** 列幅に対するコマの高さの比（ページは縦長 3:4.2 想定。作画のアスペクト比の計算と同じ） */
-export function stripHeightRatio(p: Panel, rules: PanelRules): number {
-  const w = (p.layout.w || 1) / rules.gridCols;
-  const h = ((p.layout.h || 1) / rules.gridRows) * 1.4;
-  const r = h / w;
-  return Math.min(2.4, Math.max(0.3, r));
-}
 
 export function ReaderPage() {
   const projectId = Number(useParams().projectId);
@@ -122,6 +103,7 @@ export function ReaderPage() {
         <div className="reader-modes">
           <button className={`reader-btn ${mode === 'strip' ? 'active' : ''}`} onClick={() => setMode('strip')}>縦読み</button>
           <button className={`reader-btn ${mode === 'page' ? 'active' : ''}`} onClick={() => setMode('page')}>ページ</button>
+          <StripExport episode={episode} panels={episode.panels} rules={rules} />
         </div>
         <div className="reader-progress"><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
       </div>
